@@ -35,6 +35,7 @@
 - Include books
 - Ability to sync progress between audio and epub
 
+Folder structure init:
 audiobookshelf-rs/
 ├── src/
 │   ├── main.rs
