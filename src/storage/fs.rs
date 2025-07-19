@@ -1,11 +1,11 @@
-use std::collections::HashMap;
-use std::ffi::OsString;
+use std::error::Error;
 use std::fs;
 use std::env;
-use std::hash::Hash;
+use std::fs::FileType;
 use std::io;
 use std::path::PathBuf;
 use std::process;
+use crate::models::AudioBook;
 
 fn get_path() -> PathBuf {
     let key = "AUDIOBOOKS_LOCATION";
@@ -36,25 +36,6 @@ fn get_path() -> PathBuf {
     }
 }
 
-#[derive(Debug)]
-struct AudioBook {
-    author: String,
-    series: Option<String>,
-    title: String,
-    content_path: OsString
-}
-
-impl AudioBook {
-    fn new(author: String, series: Option<String>, title: String, content_path: OsString ) -> AudioBook {
-        AudioBook {
-            author: author,
-            series: series,
-            title: title,
-            content_path: content_path
-        }
-    }
-}
-
 fn has_dirs(path: &PathBuf) -> Result<bool, io::Error> {
     Ok(fs::read_dir(path)?
         .filter_map(Result::ok)
@@ -62,7 +43,7 @@ fn has_dirs(path: &PathBuf) -> Result<bool, io::Error> {
             .map(|ft| ft.is_dir()).unwrap_or(false)))
 }
 
-fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result<(), io::Error> {
+fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result<(), Box<dyn Error>> {
     let entries = fs::read_dir(path)?;
 
     for dir_entry in entries {
@@ -84,7 +65,8 @@ fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result
             sub_dir_path.push(sub_dir);
             
             if let Err(e) =  recursive_dirscan(&sub_dir_path, audio_books) {
-                println!("Err reading folder {e}");
+                eprintln!("Err reading folder {e}");
+                continue;
             }
             
             let v: Vec<_> = sub_dir_path
@@ -96,7 +78,6 @@ fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result
                     )
                     .collect();
 
-            // println!("{:#?}", v);
 
             let (author, series, title): (String, Option<String>, String) = match v.as_slice() {
                 [_, author, series, title, ..] => (author.to_string(), Some(series.to_string()), title.to_string()),
@@ -108,7 +89,6 @@ fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result
             };
 
             let is_series = series == None && has_dirs(&sub_dir_path)?;
-            
             if !is_series {
                 audio_books.push(
                     AudioBook::new(author, series, title, sub_dir_path.into_os_string())
@@ -120,16 +100,42 @@ fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result
     Ok(())
 }
 
-pub fn scan_for_audiobooks() -> Result<(), env::VarError> {
-    let path = get_path();
+fn process_files(book: &mut AudioBook) -> Result<(), Box<dyn Error>> {
+    let entries = fs::read_dir(&book.content_path)?;
 
-    let mut audio_books: Vec<AudioBook> = Vec::new();
+    for dir_entry in entries {
+        let entry = dir_entry?;
+        let f_type = entry.file_type()?;
+
+        if f_type.is_file() {
+            let path = entry.path();
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                match ext.to_lowercase().as_str() {
+                    "jpg" | "jpeg" | "png" => {
+                        book.cover_art = Some(path.to_string_lossy().into_owned());
+                    }
+                    "mp3" | "m4b" | "flac" | "m4a" => {
+                        book.files.push(path.into_os_string());
+                    }
+                    _ => {}
+                }
+            }
+
+        }
+    }
+
+    Ok(())
+}
+
+pub fn scan_for_audiobooks() -> Result<Vec<AudioBook>, Box<dyn Error>> {
+    let path = get_path();
     let mut audio_books: Vec<AudioBook> = Vec::new();
     let _ = recursive_dirscan(&path, &mut audio_books);
 
-    for i in &audio_books {
-        println!("{:#?}", i);
+    for book in &mut audio_books {
+        process_files(book);
+        // println!("{:#?}", book);
     }
-    Ok(())
+    Ok(audio_books)
 }
 
