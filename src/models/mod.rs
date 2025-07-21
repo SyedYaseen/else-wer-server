@@ -5,14 +5,14 @@ pub struct AudioBook {
     pub author: String,
     pub series: Option<String>,
     pub title: String,
-    pub content_path: OsString,
+    pub content_path: String,
     pub cover_art: Option<String>,
     pub metadata: Option<String>,
     pub files: Vec<OsString>
 }
 
 impl AudioBook {
-    pub fn new(author: String, series: Option<String>, title: String, content_path: OsString ) -> AudioBook {
+    pub fn new(author: String, series: Option<String>, title: String, content_path: String ) -> AudioBook {
         AudioBook {
             author: author,
             series: series,

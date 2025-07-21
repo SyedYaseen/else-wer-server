@@ -5,4 +5,9 @@ edition = "2024"
 
 [dependencies]
 dotenv = "0.15.0"
-rusqlite = { version = "0.31.0", features = ["bundled"] }
+rusqlite = "0.37.0"
+r2d2 = "0.8"
+r2d2_sqlite = "0.31.0"
+symphonia = "0.5.4"
+axum = "0.8.4"
+tokio = { version = "1.46.1", features = ["full"] }

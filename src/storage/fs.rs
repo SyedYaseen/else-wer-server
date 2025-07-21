@@ -1,12 +1,11 @@
 use std::error::Error;
 use std::fs;
 use std::env;
-use std::fs::FileType;
 use std::io;
 use std::path::PathBuf;
 use std::process;
 use crate::models::AudioBook;
-
+use crate::storage::database;
 fn get_path() -> PathBuf {
     let key = "AUDIOBOOKS_LOCATION";
     
@@ -90,8 +89,15 @@ fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> Result
 
             let is_series = series == None && has_dirs(&sub_dir_path)?;
             if !is_series {
+                let conent_path = match sub_dir_path.to_str() {
+                    Some(s) => s.to_owned(),
+                    None => {
+                        eprintln!("Path is not valid UTF-8");
+                        String::new()
+                    }
+                };
                 audio_books.push(
-                    AudioBook::new(author, series, title, sub_dir_path.into_os_string())
+                    AudioBook::new(author, series, title, conent_path)
                 );
             }
         }
@@ -114,7 +120,7 @@ fn process_files(book: &mut AudioBook) -> Result<(), Box<dyn Error>> {
                     "jpg" | "jpeg" | "png" => {
                         book.cover_art = Some(path.to_string_lossy().into_owned());
                     }
-                    "mp3" | "m4b" | "flac" | "m4a" => {
+                    "mp3" | "m4b" | "flac" => {
                         book.files.push(path.into_os_string());
                     }
                     _ => {}
@@ -134,7 +140,8 @@ pub fn scan_for_audiobooks() -> Result<Vec<AudioBook>, Box<dyn Error>> {
 
     for book in &mut audio_books {
         process_files(book);
-        // println!("{:#?}", book);
+        database::insert_audiobook(book);
+        println!("{:#?}", book);
     }
     Ok(audio_books)
 }

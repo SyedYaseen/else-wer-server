@@ -1,4 +1,5 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
+use crate::models::AudioBook;
 
 pub struct Db {
     conn: Connection
@@ -11,7 +12,6 @@ impl Db {
         })
     }
 
-
     pub fn init_db(&self) -> Result<(), rusqlite::Error> {
         self.conn.execute_batch(
             "
@@ -23,6 +23,16 @@ impl Db {
                 files_location TEXT NOT NULL,
                 cover_art TEXT,
                 metadata TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS files (
+                id INTEGER PRIMARY KEY,
+                book_id INTEGER,
+                file_path TEXT NOT NULL,
+                codec TEXT,
+                duration INTEGER,
+                channels INTEGER,
+                sample_rate INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS users (
@@ -46,14 +56,31 @@ impl Db {
         Ok(())
     }
 
-    // fn insert_audiobook(&self, book: &AudioBook) -> Result<()> {
-    //     self.conn.execute(
-    //         "INSERT INTO audiobooks (author, series, title, files_location, cover_art, metadata)
-    //         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-    //         (&book.author, &book.series, &book.title, &book.files_location, &book.cover_art, &book.metadata),
-    //     )?;
-    //     Ok(())
-    // }
+    pub fn insert_audiobook(&self, book: &AudioBook) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO audiobooks (author, series, title, files_location, cover_art, metadata)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            (&book.author, &book.series, &book.title, &book.content_path, &book.cover_art, &book.metadata),
+        )?;
+        Ok(())
+    }
+
+//     pub fn insert_file_metadata(
+//     conn: &Connection,
+//     book_id: i32,
+//     file_path: &str,
+//     codec: Option<String>,
+//     duration: Option<u64>,
+//     channels: Option<u8>,
+//     sample_rate: Option<u32>,
+// ) -> Result<()> {
+//     conn.execute(
+//         "INSERT INTO files (book_id, file_path, codec, duration, channels, sample_rate)
+//          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+//         params![book_id, file_path, codec, duration, channels, sample_rate],
+//     )?;
+//     Ok(())
+// }
 
     // fn get_all_books(conn: &Connection) -> Result<Vec<AudioBook>> {
     //     let mut stmt = conn.prepare("SELECT id, author, series, title, files_location, cover_art, metadata FROM audiobooks")?;
