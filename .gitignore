@@ -1,2 +1,6 @@
 /target
 /data
+*.db
+rustybookshelf.db
+rustybookshelf.db-wal
+rustybookshelf.db-shm
