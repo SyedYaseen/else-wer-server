@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS audiobooks (
     cover_art TEXT,
     metadata TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (author, title)
 );
 
 -- Create files table
@@ -16,11 +17,12 @@ CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY,
     book_id INTEGER NOT NULL,
     file_path TEXT NOT NULL,
-    codec TEXT,
     duration INTEGER,
     channels INTEGER,
     sample_rate INTEGER,
+    bitrate INTEGER,
     FOREIGN KEY(book_id) REFERENCES audiobooks(id) ON DELETE CASCADE
+    UNIQUE (book_id, file_path)
 );
 
 -- Create users table

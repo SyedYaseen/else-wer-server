@@ -1,15 +1,16 @@
-use crate::db::audiobooks::insert_audiobook;
+use crate::db::audiobooks::{insert_audiobook, insert_file_metadata};
 use crate::models::models::{AudioBook, CreateFileMetadata};
-use anyhow::{Context, Ok};
+use anyhow::Ok;
 
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::ItemKey;
 use sqlx::SqlitePool;
 use std::ffi::OsStr;
 use std::path::PathBuf;
+use std::result::Result;
 use tokio::fs;
 use tokio::task::spawn_blocking;
+
 // async fn get_path() -> PathBuf {
 //     let key = "AUDIOBOOKS_LOCATION";
 
@@ -112,45 +113,42 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
     Ok(())
 }
 
-pub fn extract_metadata(path: &OsStr) -> anyhow::Result<()> {
-    // Read file with Lofty
-    let tagged_file = Probe::open(path)?.read()?;
+pub async fn extract_metadata(path: &OsStr) -> anyhow::Result<CreateFileMetadata> {
+    let path = path.to_owned();
+    let metadata = spawn_blocking(async || -> anyhow::Result<CreateFileMetadata> {
+        let tagged_file = Probe::open(&path)?.read()?;
 
-    let mut title = None;
-    let mut artist = None;
-    let mut album = None;
-    let mut duration: Option<u64> = None;
-    let mut bitrate: Option<u32> = None;
+        let props = tagged_file.properties();
+        let duration = Some(props.duration().as_secs());
+        let channels = props.channels();
+        let sample_rate = props.sample_rate();
+        let bitrate = props.audio_bitrate();
 
-    if let Some(tag) = tagged_file.primary_tag() {
-        title = tag.get_string(&ItemKey::TrackTitle).map(|s| s.to_string());
-        artist = tag
-            .get_string(&ItemKey::AlbumArtist)
-            .or_else(|| tag.get_string(&ItemKey::TrackArtist))
-            .map(|s| s.to_string());
-        album = tag.get_string(&ItemKey::AlbumTitle).map(|s| s.to_string());
-    };
+        // let mut title = None;
+        // let mut artist = None;
+        // let mut album = None;
 
-    let props = tagged_file.properties();
-    bitrate = props.audio_bitrate();
-    duration = Some(props.duration().as_secs());
+        // if let Some(tag) = tagged_file.primary_tag() {
+        //     title = tag.get_string(&ItemKey::TrackTitle).map(|s| s.to_string());
+        //     artist = tag
+        //         .get_string(&ItemKey::AlbumArtist)
+        //         .or_else(|| tag.get_string(&ItemKey::TrackArtist))
+        //         .map(|s| s.to_string());
+        //     album = tag.get_string(&ItemKey::AlbumTitle).map(|s| s.to_string());
+        // };
 
-    println!(
-        "{} {} {} {}",
-        title.unwrap_or_else(|| "Titl not found".to_string()),
-        artist.unwrap_or_else(|| "Artist not found".to_string()),
-        duration.unwrap_or_default(), // album.unwrap_or_else(|| "Alb not found".to_string())
-        bitrate.unwrap_or_default()
-    );
+        Ok(CreateFileMetadata::new(
+            path,
+            duration.map(|d| d as i64),
+            channels.map(|c| c as i64),
+            sample_rate.map(|sr| sr as i64),
+            bitrate.map(|br| br as i64),
+        ))
+    })
+    .await?;
+    let metadata = metadata.await?;
 
-    // Ok(())
-    // Ok(BookMetadata {
-    //     title,
-    //     artist,
-    //     album,
-    //     duration_seconds: duration,
-    // })
-    Ok(())
+    Ok(metadata)
 }
 
 async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
@@ -185,8 +183,12 @@ pub async fn scan_for_audiobooks(
     let path = PathBuf::from(path_str);
 
     if !path.exists() {
-        return Err(anyhow::anyhow!("Path '{}' doesn't exist", path.display()));
+        println!("Attempting to create dir {}", path.display());
+        if let Err(e) = fs::create_dir_all(&p) {
+            return Err(anyhow::anyhow!("Failed to create dir {}", path.display()));
+        }
     }
+    
     if !path.is_dir() {
         return Err(anyhow::anyhow!("'{}' is not a directory", path.display()));
     }
@@ -199,10 +201,36 @@ pub async fn scan_for_audiobooks(
         let db = db.clone();
         tasks.push(tokio::spawn(async move {
             get_book_files(&mut book).await?;
-            // insert_audiobook(&db, &book).await?;
+            // let bookid = insert_audiobook(&db, &book).await?;
+
+            let bookid = match insert_audiobook(&db, &book).await {
+                Result::Ok(id) => id,
+                Err(e) => {
+                    let msg = e.to_string();
+                    if msg.contains("UNIQUE constraint failed") {
+                        eprintln!("Book exists: {} - {}", book.author, book.title);
+                        -99 // get_audiobook_id(&db, &book).await? here
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            };
 
             for file in &book.files {
-                let _ = extract_metadata(file);
+                let mut metadata = extract_metadata(file).await?;
+                metadata.book_id = bookid;
+                // println!("Metadata {:#?} \n", metadata);
+
+                match insert_file_metadata(&db, metadata).await {
+                    Result::Ok(_) => (),
+                    Err(e) => {
+                        eprintln!(
+                            "File: {} already mapped to bookid: {}",
+                            file.to_str().unwrap_or_default(),
+                            bookid
+                        );
+                    }
+                };
             }
             Ok(book)
         }));
@@ -214,5 +242,4 @@ pub async fn scan_for_audiobooks(
     }
 
     Ok(processed_books)
-    // Ok(())
 }
