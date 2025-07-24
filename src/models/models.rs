@@ -1,4 +1,7 @@
 use std::ffi::OsString;
+
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
 #[derive(Debug, serde::Serialize)]
 pub struct AudioBook {
     pub author: String,
@@ -28,6 +31,25 @@ impl AudioBook {
         }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BaseFileMetadata {
+    pub book_id: i32,
+    pub file_path: String,
+    pub codec: Option<String>,
+    pub duration: Option<i64>,
+    pub channels: Option<i64>,
+    pub sample_rate: Option<i64>,
+}
+
+#[derive(Debug, FromRow, Serialize, Deserialize)]
+pub struct FileMetadata {
+    pub id: i64,
+    #[serde(flatten)]
+    pub data: BaseFileMetadata,
+}
+
+pub type CreateFileMetadata = BaseFileMetadata;
 
 #[derive(Debug)]
 pub struct User {

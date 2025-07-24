@@ -1,13 +1,15 @@
 use crate::db::audiobooks::insert_audiobook;
-use crate::models::models::AudioBook;
-use core::task;
+use crate::models::models::{AudioBook, CreateFileMetadata};
+use anyhow::{Context, Ok};
+
+use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::probe::Probe;
+use lofty::tag::ItemKey;
 use sqlx::SqlitePool;
-use std::env;
-use std::error::Error;
-use std::io;
+use std::ffi::OsStr;
 use std::path::PathBuf;
-use std::process;
 use tokio::fs;
+use tokio::task::spawn_blocking;
 // async fn get_path() -> PathBuf {
 //     let key = "AUDIOBOOKS_LOCATION";
 
@@ -41,7 +43,7 @@ use tokio::fs;
 //     }
 // }
 
-async fn has_dirs(path: &PathBuf) -> Result<bool, io::Error> {
+async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     let mut entries = fs::read_dir(path).await?;
     while let Some(entry) = entries.next_entry().await? {
         if entry.file_type().await?.is_dir() {
@@ -51,10 +53,7 @@ async fn has_dirs(path: &PathBuf) -> Result<bool, io::Error> {
     return Ok(false);
 }
 
-async fn recursive_dirscan(
-    path: &PathBuf,
-    audio_books: &mut Vec<AudioBook>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> anyhow::Result<()> {
     let mut entries = fs::read_dir(path).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -113,9 +112,48 @@ async fn recursive_dirscan(
     Ok(())
 }
 
-async fn process_files(
-    book: &mut AudioBook,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn extract_metadata(path: &OsStr) -> anyhow::Result<()> {
+    // Read file with Lofty
+    let tagged_file = Probe::open(path)?.read()?;
+
+    let mut title = None;
+    let mut artist = None;
+    let mut album = None;
+    let mut duration: Option<u64> = None;
+    let mut bitrate: Option<u32> = None;
+
+    if let Some(tag) = tagged_file.primary_tag() {
+        title = tag.get_string(&ItemKey::TrackTitle).map(|s| s.to_string());
+        artist = tag
+            .get_string(&ItemKey::AlbumArtist)
+            .or_else(|| tag.get_string(&ItemKey::TrackArtist))
+            .map(|s| s.to_string());
+        album = tag.get_string(&ItemKey::AlbumTitle).map(|s| s.to_string());
+    };
+
+    let props = tagged_file.properties();
+    bitrate = props.audio_bitrate();
+    duration = Some(props.duration().as_secs());
+
+    println!(
+        "{} {} {} {}",
+        title.unwrap_or_else(|| "Titl not found".to_string()),
+        artist.unwrap_or_else(|| "Artist not found".to_string()),
+        duration.unwrap_or_default(), // album.unwrap_or_else(|| "Alb not found".to_string())
+        bitrate.unwrap_or_default()
+    );
+
+    // Ok(())
+    // Ok(BookMetadata {
+    //     title,
+    //     artist,
+    //     album,
+    //     duration_seconds: duration,
+    // })
+    Ok(())
+}
+
+async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
     let mut entries = fs::read_dir(&book.content_path).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -143,11 +181,14 @@ async fn process_files(
 pub async fn scan_for_audiobooks(
     path_str: &str,
     db: &SqlitePool,
-) -> Result<Vec<AudioBook>, Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<Vec<AudioBook>> {
     let path = PathBuf::from(path_str);
 
     if !path.exists() {
-        return Err("Provided path does not exist".into());
+        return Err(anyhow::anyhow!("Path '{}' doesn't exist", path.display()));
+    }
+    if !path.is_dir() {
+        return Err(anyhow::anyhow!("'{}' is not a directory", path.display()));
     }
 
     let mut audio_books: Vec<AudioBook> = Vec::new();
@@ -156,12 +197,14 @@ pub async fn scan_for_audiobooks(
     let mut tasks = vec![];
     for mut book in audio_books {
         let db = db.clone();
-
         tasks.push(tokio::spawn(async move {
-            process_files(&mut book).await?;
-            insert_audiobook(&db, &book).await?;
+            get_book_files(&mut book).await?;
+            // insert_audiobook(&db, &book).await?;
 
-            Ok(book) as Result<AudioBook, Box<dyn std::error::Error + Send + Sync>>
+            for file in &book.files {
+                let _ = extract_metadata(file);
+            }
+            Ok(book)
         }));
     }
 
