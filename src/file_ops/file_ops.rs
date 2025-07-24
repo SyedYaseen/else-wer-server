@@ -1,4 +1,4 @@
-use crate::db::audiobooks::{insert_audiobook, insert_file_metadata};
+use crate::db::audiobooks::{get_audiobook_id, insert_audiobook, insert_file_metadata};
 use crate::models::models::{AudioBook, CreateFileMetadata};
 use anyhow::Ok;
 
@@ -10,39 +10,6 @@ use std::path::PathBuf;
 use std::result::Result;
 use tokio::fs;
 use tokio::task::spawn_blocking;
-
-// async fn get_path() -> PathBuf {
-//     let key = "AUDIOBOOKS_LOCATION";
-
-//     match env::var(key) {
-//         Ok(path) if !path.trim().is_empty() => {
-//             let p = PathBuf::from(path);
-//             if !p.exists() {
-//                 if let Err(e) = fs::create_dir_all(&p) {
-//                     eprintln!("Error: Failed to create directory {}. {}", p.display(), e);
-//                     process::exit(1);
-//                 }
-//             }
-//             p
-//         }
-//         _ => {
-//             eprintln!("Env {key} doesn't exist. Setting default audiobooks location");
-//             let default_path = PathBuf::from("data");
-
-//             if !default_path.exists() {
-//                 if let Err(e) = fs::create_dir_all(&default_path) {
-//                     eprintln!(
-//                         "Error: Failed to create default directory {}. {}",
-//                         default_path.display(),
-//                         e
-//                     );
-//                     process::exit(1);
-//                 }
-//             }
-//             default_path
-//         }
-//     }
-// }
 
 async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     let mut entries = fs::read_dir(path).await?;
@@ -184,11 +151,11 @@ pub async fn scan_for_audiobooks(
 
     if !path.exists() {
         println!("Attempting to create dir {}", path.display());
-        if let Err(e) = fs::create_dir_all(&p) {
+        if let Err(_) = fs::create_dir_all(&path).await {
             return Err(anyhow::anyhow!("Failed to create dir {}", path.display()));
         }
     }
-    
+
     if !path.is_dir() {
         return Err(anyhow::anyhow!("'{}' is not a directory", path.display()));
     }
@@ -209,7 +176,7 @@ pub async fn scan_for_audiobooks(
                     let msg = e.to_string();
                     if msg.contains("UNIQUE constraint failed") {
                         eprintln!("Book exists: {} - {}", book.author, book.title);
-                        -99 // get_audiobook_id(&db, &book).await? here
+                        get_audiobook_id(&db, &book).await?
                     } else {
                         return Err(e.into());
                     }
@@ -223,7 +190,7 @@ pub async fn scan_for_audiobooks(
 
                 match insert_file_metadata(&db, metadata).await {
                     Result::Ok(_) => (),
-                    Err(e) => {
+                    Err(_) => {
                         eprintln!(
                             "File: {} already mapped to bookid: {}",
                             file.to_str().unwrap_or_default(),

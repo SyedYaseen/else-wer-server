@@ -1,5 +1,5 @@
 use crate::models::models::{AudioBook, CreateFileMetadata};
-use anyhow::Error;
+use anyhow::{Error, Result};
 use sqlx::{Pool, Sqlite};
 
 pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, Error> {
@@ -45,4 +45,20 @@ pub async fn insert_file_metadata(
     .await?;
 
     Ok(())
+}
+
+pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64> {
+    let row: (i64,) = sqlx::query_as(
+        r#"
+        SELECT id
+        FROM audiobooks
+        WHERE author = ?1 AND title = ?2
+        "#,
+    )
+    .bind(&book.author)
+    .bind(&book.title)
+    .fetch_one(db)
+    .await?;
+
+    Ok(row.0)
 }
