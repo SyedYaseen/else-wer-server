@@ -39,11 +39,12 @@ CREATE TABLE IF NOT EXISTS progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     book_id INTEGER NOT NULL,
-    progress_fname TEXT,
+    file_id INTEGER NOT NULL,
     progress_time_marker INTEGER DEFAULT 0,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY(book_id) REFERENCES audiobooks(id) ON DELETE CASCADE,
-    UNIQUE(user_id, book_id)
+    FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE,
+    UNIQUE(user_id, book_id, file_id)
 );
 
 -- Create triggers for timestamps

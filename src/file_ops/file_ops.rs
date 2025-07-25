@@ -1,5 +1,5 @@
 use crate::db::audiobooks::{get_audiobook_id, insert_audiobook, insert_file_metadata};
-use crate::models::models::{AudioBook, CreateFileMetadata};
+use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use anyhow::Ok;
 
 use lofty::file::{AudioFile, TaggedFileExt};

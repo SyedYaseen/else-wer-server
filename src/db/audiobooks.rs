@@ -1,4 +1,4 @@
-use crate::models::models::{AudioBook, CreateFileMetadata, FileMetadata};
+use crate::models::audiobooks::{AudioBook, CreateFileMetadata, FileMetadata};
 use anyhow::{Error, Result};
 use sqlx::{Pool, Sqlite};
 

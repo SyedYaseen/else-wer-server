@@ -71,19 +71,4 @@ impl CreateFileMetadata {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct User {
-    pub id: i32,
-    pub username: String,
-    pub password_hash: String,
-    pub salt: String,
-}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Progress {
-    pub id: i32,
-    pub user_id: i32,
-    pub book_id: i32,
-    pub progress_fname: Option<String>,
-    pub progress_time_marker: i32,
-}
