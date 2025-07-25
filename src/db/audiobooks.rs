@@ -1,4 +1,4 @@
-use crate::models::models::{AudioBook, CreateFileMetadata};
+use crate::models::models::{AudioBook, CreateFileMetadata, FileMetadata};
 use anyhow::{Error, Result};
 use sqlx::{Pool, Sqlite};
 
@@ -61,4 +61,42 @@ pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
     .await?;
 
     Ok(row.0)
+}
+
+pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec<FileMetadata>> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT
+            id,
+            book_id,
+            file_path,
+            duration,
+            channels,
+            sample_rate,
+            bitrate
+        FROM files
+        WHERE book_id = ?
+        ORDER BY id
+        "#,
+        book_id
+    )
+    .fetch_all(db)
+    .await?;
+
+    let files = rows
+        .into_iter()
+        .map(|r| FileMetadata {
+            id: r.id.expect("Id doesnt exist"),
+            data: CreateFileMetadata {
+                book_id: r.book_id,
+                file_path: r.file_path,
+                duration: r.duration,
+                channels: r.channels,
+                sample_rate: r.sample_rate,
+                bitrate: r.bitrate,
+            },
+        })
+        .collect();
+
+    Ok(files)
 }

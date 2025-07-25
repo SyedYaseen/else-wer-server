@@ -168,7 +168,6 @@ pub async fn scan_for_audiobooks(
         let db = db.clone();
         tasks.push(tokio::spawn(async move {
             get_book_files(&mut book).await?;
-            // let bookid = insert_audiobook(&db, &book).await?;
 
             let bookid = match insert_audiobook(&db, &book).await {
                 Result::Ok(id) => id,
@@ -186,7 +185,6 @@ pub async fn scan_for_audiobooks(
             for file in &book.files {
                 let mut metadata = extract_metadata(file).await?;
                 metadata.book_id = bookid;
-                // println!("Metadata {:#?} \n", metadata);
 
                 match insert_file_metadata(&db, metadata).await {
                     Result::Ok(_) => (),

@@ -52,14 +52,6 @@ pub struct FileMetadata {
 
 pub type CreateFileMetadata = BaseFileMetadata;
 
-#[derive(Debug)]
-pub struct User {
-    pub id: i32,
-    pub username: String,
-    pub password_hash: String,
-    pub salt: String,
-}
-
 impl CreateFileMetadata {
     pub fn new(
         file_path: OsString,
@@ -79,7 +71,15 @@ impl CreateFileMetadata {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct User {
+    pub id: i32,
+    pub username: String,
+    pub password_hash: String,
+    pub salt: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Progress {
     pub id: i32,
     pub user_id: i32,
