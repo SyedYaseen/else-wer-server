@@ -5,6 +5,7 @@ use sqlx::FromRow;
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct AudioBookRow {
+    pub id: i64,
     pub author: String,
     pub series: Option<String>,
     pub title: String,
