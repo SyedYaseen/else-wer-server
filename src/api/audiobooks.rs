@@ -1,6 +1,7 @@
-use crate::db::audiobooks::get_files_by_book_id;
+use crate::db::audiobooks::{get_files_by_book_id, list_all_books};
 use crate::file_ops::file_ops;
 use crate::{AppState, api::api_error::ApiError};
+use Result::Ok;
 use axum::body::Body;
 use axum::{
     Json,
@@ -14,6 +15,24 @@ use sqlx::{Pool, Sqlite};
 use std::io::Write;
 use zip::CompressionMethod;
 use zip::write::FileOptions;
+
+pub async fn list_books(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    match list_all_books(&db).await {
+        Ok(books) => Ok(Json(json!({
+            "message": "Books list",
+            "count": books.len(),
+            "books": books
+        }))),
+        Err(e) => {
+            // Log the detailed error for debugging
+            tracing::error!("Error scanning files: {}", e);
+            Err(ApiError::InternalServerError(
+                "Failed to scan audiobooks".to_string(),
+            ))
+        }
+    }
+}
 
 pub async fn scan_files(State(state): State<AppState>) -> Result<impl IntoResponse, ApiError> {
     let path = &state.config.book_files;

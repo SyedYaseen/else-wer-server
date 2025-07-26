@@ -1,14 +1,18 @@
 use crate::db::audiobooks::{get_audiobook_id, insert_audiobook, insert_file_metadata};
 use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
-use anyhow::Ok;
+use anyhow::{Ok, anyhow};
 
-use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::file::AudioFile;
 use lofty::probe::Probe;
+use serde::Deserialize;
 use sqlx::SqlitePool;
-use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::result::Result;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::probe::Hint;
+use symphonia::default;
 use tokio::fs;
+use tokio::process::Command;
 use tokio::task::spawn_blocking;
 
 async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
@@ -58,7 +62,7 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
                 ),
                 [_, author, title, ..] => (author.to_string(), None, title.to_string()),
                 _ => {
-                    println!("Warn: Not a valid path during directory scan");
+                    println!("Warn: Not a valid dir scan path");
                     continue;
                 }
             };
@@ -80,42 +84,67 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
     Ok(())
 }
 
-pub async fn extract_metadata(path: &OsStr) -> anyhow::Result<CreateFileMetadata> {
-    let path = path.to_owned();
-    let metadata = spawn_blocking(async || -> anyhow::Result<CreateFileMetadata> {
-        let tagged_file = Probe::open(&path)?.read()?;
+// Book exists: test - Book 5 Network effect
+// This data/test/Book 5 Network effect/Network effect.m4b
+// 2025-07-25T21:47:37.856978Z ERROR rustybookshelf::api::audiobooks: Error scanning files: No format could be determined from the provided file
 
-        let props = tagged_file.properties();
-        let duration = Some(props.duration().as_secs());
-        let channels = props.channels();
-        let sample_rate = props.sample_rate();
-        let bitrate = props.audio_bitrate();
+//     This data/MarthaWells/The Murderbot Diaries/Book 4 Exit Strategy/Exit Strategy.m4b
+// This data/MarthaWells/The Murderbot Diaries/Book 1 All Systems Red/All Systems Red.m4b
 
-        // let mut title = None;
-        // let mut artist = None;
-        // let mut album = None;
+#[derive(Debug, Deserialize)]
+struct FFProbeFormat {
+    duration: Option<String>,
+    bit_rate: Option<String>,
+}
 
-        // if let Some(tag) = tagged_file.primary_tag() {
-        //     title = tag.get_string(&ItemKey::TrackTitle).map(|s| s.to_string());
-        //     artist = tag
-        //         .get_string(&ItemKey::AlbumArtist)
-        //         .or_else(|| tag.get_string(&ItemKey::TrackArtist))
-        //         .map(|s| s.to_string());
-        //     album = tag.get_string(&ItemKey::AlbumTitle).map(|s| s.to_string());
-        // };
+#[derive(Debug, Deserialize)]
+struct FFProbeData {
+    format: FFProbeFormat,
+}
 
-        Ok(CreateFileMetadata::new(
+pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
             path,
-            duration.map(|d| d as i64),
-            channels.map(|c| c as i64),
-            sample_rate.map(|sr| sr as i64),
-            bitrate.map(|br| br as i64),
-        ))
-    })
-    .await?;
-    let metadata = metadata.await?;
+        ])
+        .output()
+        .await
+        .map_err(|e| anyhow!("Failed to run ffprobe: {e}"))?;
 
-    Ok(metadata)
+    if !output.status.success() {
+        return Err(anyhow!("ffprobe failed for file '{}'", path));
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let ff_data: FFProbeData = serde_json::from_str(&json_str)
+        .map_err(|e| anyhow!("Failed to parse ffprobe JSON: {e}"))?;
+
+    let duration = ff_data
+        .format
+        .duration
+        .as_deref()
+        .and_then(|d| d.parse::<f64>().ok())
+        .map(|d| d as i64);
+
+    let bitrate = ff_data
+        .format
+        .bit_rate
+        .as_deref()
+        .and_then(|b| b.parse::<i64>().ok());
+
+    Ok(CreateFileMetadata::new(
+        path.to_owned(),
+        duration,
+        None,
+        None,
+        bitrate,
+    ))
 }
 
 async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
@@ -131,8 +160,8 @@ async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
                     "jpg" | "jpeg" | "png" => {
                         book.cover_art = Some(path.to_string_lossy().into_owned());
                     }
-                    "mp3" | "m4b" | "flac" => {
-                        book.files.push(path.into_os_string());
+                    "mp3" | "m4b" | "flac" | "m4a" => {
+                        book.files.push(path.to_string_lossy().into_owned());
                     }
                     _ => {}
                 }
@@ -183,17 +212,13 @@ pub async fn scan_for_audiobooks(
             };
 
             for file in &book.files {
-                let mut metadata = extract_metadata(file).await?;
+                let mut metadata = extract_metadata(&file).await?;
                 metadata.book_id = bookid;
 
                 match insert_file_metadata(&db, metadata).await {
                     Result::Ok(_) => (),
                     Err(_) => {
-                        eprintln!(
-                            "File: {} already mapped to bookid: {}",
-                            file.to_str().unwrap_or_default(),
-                            bookid
-                        );
+                        eprintln!("File: {} already mapped to bookid: {}", file, bookid);
                     }
                 };
             }
