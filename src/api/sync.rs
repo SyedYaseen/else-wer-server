@@ -1,0 +1,39 @@
+use crate::{
+    AppState,
+    api::api_error::ApiError,
+    db::sync::{get_progress_by_ids, upsert_progress},
+    models::user::ProgressUpdate,
+};
+use Result::Ok;
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+
+pub async fn get_progress(
+    State(state): State<AppState>,
+    Path((user_id, book_id, file_id)): Path<(i64, i64, i64)>,
+) -> impl IntoResponse {
+    match get_progress_by_ids(&state.db_pool, user_id, book_id, file_id).await {
+        Ok(Some(progress)) => Json(progress).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "Progress not found").into_response(),
+        Err(e) => {
+            eprintln!("DB error fetching progress: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response()
+        }
+    }
+}
+
+pub async fn update_progress(
+    State(state): State<AppState>,
+    Json(payload): Json<ProgressUpdate>,
+) -> Result<impl IntoResponse, ApiError> {
+    match upsert_progress(&state.db_pool, &payload).await {
+        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => Err(ApiError::InternalServerError(format!(
+            "DB error while upserting progress: {e}"
+        ))),
+    }
+}

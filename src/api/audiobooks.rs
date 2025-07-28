@@ -1,7 +1,9 @@
 use crate::db::audiobooks::{get_files_by_book_id, list_all_books};
 use crate::file_ops::file_ops;
+use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
 use Result::Ok;
+use anyhow::anyhow;
 use axum::body::Body;
 use axum::{
     Json,
@@ -9,9 +11,9 @@ use axum::{
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
+use sqlx::{Pool, Sqlite, pool};
 
 use serde_json::json;
-use sqlx::{Pool, Sqlite};
 use std::io::Write;
 use zip::CompressionMethod;
 use zip::write::FileOptions;
@@ -54,24 +56,37 @@ pub async fn scan_files(State(state): State<AppState>) -> Result<impl IntoRespon
     }
 }
 
+async fn get_file_metadata(db: &Pool<Sqlite>, book_id: i64) -> anyhow::Result<Vec<FileMetadata>> {
+    let files = get_files_by_book_id(db, book_id).await.map_err(|e| {
+        eprintln!("Error retrieving files from db: {e}");
+        anyhow::anyhow!(e)
+    })?;
+
+    if files.is_empty() {
+        eprintln!("No files found. BookId {}", book_id);
+        return Err(anyhow::anyhow!(format!(
+            "No files found. BookId {}",
+            book_id
+        )));
+    }
+
+    Ok(files)
+}
+
 pub async fn download_book(
     State(state): State<AppState>,
     Path(book_id): Path<i64>,
 ) -> impl IntoResponse {
-    let db = &state.db_pool;
-    let files = get_files_by_book_id(&db, book_id).await;
-    if files.is_err() {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error retrieving files".to_string(),
-        )
-            .into_response();
-    }
-
-    let files = files.unwrap();
-    if files.is_empty() {
-        return (StatusCode::NOT_FOUND, "No files found for this book").into_response();
-    }
+    let files = match get_file_metadata(&state.db_pool, book_id).await {
+        Ok(f) => f,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error retrieving files".to_string(),
+            )
+                .into_response();
+        }
+    };
 
     let mut buffer = Vec::new();
     {
@@ -104,4 +119,23 @@ pub async fn download_book(
         .header(header::CONTENT_DISPOSITION, disposition_value)
         .body(Body::from(buffer))
         .unwrap()
+}
+
+pub async fn file_metadata(
+    State(state): State<AppState>,
+    Path(book_id): Path<i64>,
+) -> Result<impl IntoResponse, ApiError> {
+    match get_file_metadata(&state.db_pool, book_id).await {
+        Ok(files) => Ok(Json(json!({
+            "message": "",
+            "count": files.len(),
+            "data": files,
+        }))),
+        Err(e) => {
+            tracing::error!("Error scanning files: {}", e);
+            Err(ApiError::InternalServerError(
+                "Failed to scan audiobooks".to_string(),
+            ))
+        }
+    }
 }

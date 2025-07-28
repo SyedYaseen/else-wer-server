@@ -21,8 +21,7 @@ CREATE TABLE IF NOT EXISTS files (
     channels INTEGER,
     sample_rate INTEGER,
     bitrate INTEGER,
-    FOREIGN KEY(book_id) REFERENCES audiobooks(id) ON DELETE CASCADE
-    UNIQUE (book_id, file_path)
+    FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE UNIQUE (book_id, file_path)
 );
 
 -- Create users table
@@ -40,11 +39,11 @@ CREATE TABLE IF NOT EXISTS progress (
     user_id INTEGER NOT NULL,
     book_id INTEGER NOT NULL,
     file_id INTEGER NOT NULL,
-    progress_time_marker INTEGER DEFAULT 0,
-    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY(book_id) REFERENCES audiobooks(id) ON DELETE CASCADE,
-    FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE,
-    UNIQUE(user_id, book_id, file_id)
+    progress_time_marker INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE,
+    FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE,
+    UNIQUE (user_id, book_id, file_id)
 );
 
 -- Create triggers for timestamps

@@ -61,3 +61,21 @@ audiobookshelf-rs/
 ├── .env
 ├── Cargo.toml
 └── README.md
+
+
+## Test curl
+curl localhost:3000/api/scan_files
+
+curl -X POST http://localhost:3000/api/update_progress \
+  -H 'content-type: application/json' \
+  -d '{
+    "user_id": 1,
+    "book_id": 7,
+    "file_id": 6,
+    "progress_time_marker": 10000
+  }' -i
+
+curl localhost:3000/api/file_metadata/1
+
+curl localhost:3000/api/get_progress/1/7/6
+

@@ -8,9 +8,17 @@ pub struct User {
     pub salt: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(sqlx::FromRow, Serialize, Deserialize, Debug)]
 pub struct Progress {
     pub id: i64,
+    pub user_id: i64,
+    pub book_id: i64,
+    pub file_id: i64,
+    pub progress_time_marker: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProgressUpdate {
     pub user_id: i64,
     pub book_id: i64,
     pub file_id: i64,
