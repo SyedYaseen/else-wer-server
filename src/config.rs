@@ -1,9 +1,12 @@
 use std::env;
+
+use anyhow::Context;
 pub struct Config {
     pub database_url: String,
     pub host: String,
     pub port: u16,
     pub book_files: String,
+    pub jwt_secret: anyhow::Result<String>,
 }
 
 impl Config {
@@ -17,6 +20,7 @@ impl Config {
                 .parse()
                 .unwrap_or(3000),
             book_files: env::var("AUDIOBOOKS_LOCATION").unwrap_or_else(|_| "data".to_string()),
+            jwt_secret: env::var("JWT_SECRET").with_context(|| "Please set JWT SECRET"),
         })
     }
 }

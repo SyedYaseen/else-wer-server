@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct UserDto {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: i64,
     pub username: String,
@@ -23,4 +30,12 @@ pub struct ProgressUpdate {
     pub book_id: i64,
     pub file_id: i64,
     pub progress_time_marker: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: i64,         // subject, usually user ID
+    pub username: String, // optional additional info
+    pub exp: usize,       // expiration timestamp (seconds since epoch)
+    pub iat: usize,       // issued at timestamp
 }

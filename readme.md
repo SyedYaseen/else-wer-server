@@ -79,3 +79,10 @@ curl localhost:3000/api/file_metadata/1
 
 curl localhost:3000/api/get_progress/1/7/6
 
+curl -X POST http://localhost:3000/api/create_user \
+  -H "Content-Type: application/json" \
+  -d '{"username": "valerie", "password": "mypassword"}'
+
+  curl -X POST http://localhost:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "valerie", "password": "mypassword"}'

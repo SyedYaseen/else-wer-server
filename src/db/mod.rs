@@ -1,5 +1,6 @@
 pub mod audiobooks;
 pub mod sync;
+pub mod user;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Error as SqlxError, SqlitePool};
 use std::str::FromStr;
