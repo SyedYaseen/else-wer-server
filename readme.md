@@ -83,6 +83,8 @@ curl -X POST http://localhost:3000/api/create_user \
   -H "Content-Type: application/json" \
   -d '{"username": "valerie", "password": "mypassword"}'
 
-  curl -X POST http://localhost:3000/api/login \
+  curl -X POST http://192.168.1.3:3000/api/login \
   -H "Content-Type: application/json" \
   -d '{"username": "valerie", "password": "mypassword"}'
+
+http://192.168.1.3:3000/api/login valerie mypassword

@@ -23,7 +23,7 @@ pub async fn login(
     let jwt_bytes = jwt.as_bytes();
 
     match auth_and_issue_jwt(&payload, db, &jwt_bytes).await {
-        Ok(token) => (StatusCode::ACCEPTED, Json(json!({ "message": token }))),
+        Ok(token) => (StatusCode::ACCEPTED, Json(json!({ "token": token }))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": format!("Login failed: {}", e) })),
