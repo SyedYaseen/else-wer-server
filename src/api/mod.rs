@@ -12,7 +12,7 @@ use crate::{
     AppState,
     api::{
         audiobooks::{download_book, file_metadata, list_books},
-        sync::{get_progress, update_progress},
+        sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
 };
@@ -28,8 +28,12 @@ pub async fn routes() -> Router<AppState> {
         .route("/file_metadata/{book_id}", get(file_metadata))
         // Sync
         .route(
-            "/get_progress/{user_id}/{book_id}/{file_id}",
-            get(get_progress),
+            "/get_file_progress/{user_id}/{book_id}/{file_id}",
+            get(get_file_progress),
+        )
+        .route(
+            "/get_book_progress/{user_id}/{book_id}",
+            get(get_book_progress),
         )
         .route("/update_progress", post(update_progress))
         // User

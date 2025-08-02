@@ -16,12 +16,14 @@ CREATE TABLE IF NOT EXISTS audiobooks (
 CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY,
     book_id INTEGER NOT NULL,
+    file_id INTEGER NOT NULL,
     file_path TEXT NOT NULL,
     duration INTEGER,
     channels INTEGER,
     sample_rate INTEGER,
     bitrate INTEGER,
-    FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE UNIQUE (book_id, file_path)
+    FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE,
+    UNIQUE (book_id, file_id, file_path)
 );
 
 -- Create users table
@@ -40,6 +42,8 @@ CREATE TABLE IF NOT EXISTS progress (
     book_id INTEGER NOT NULL,
     file_id INTEGER NOT NULL,
     progress_time_marker INTEGER NOT NULL DEFAULT 0,
+    complete BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
     FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE,
     FOREIGN KEY (file_id) REFERENCES files (id) ON DELETE CASCADE,

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 
@@ -22,6 +23,8 @@ pub struct Progress {
     pub book_id: i64,
     pub file_id: i64,
     pub progress_time_marker: i64,
+    pub complete: bool,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]

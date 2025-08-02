@@ -1,5 +1,5 @@
 use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata};
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use sqlx::{Pool, Sqlite};
 
 pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
@@ -40,23 +40,25 @@ pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
 
 pub async fn insert_file_metadata(
     db: &Pool<Sqlite>,
-    create_data: CreateFileMetadata,
-) -> Result<(), Error> {
-    let file_path = create_data.file_path.to_string().to_owned();
+    create_data: &mut CreateFileMetadata,
+) -> anyhow::Result<()> {
+    // let file_path = create_data.file_path.to_string().to_owned();
     sqlx::query!(
         r#"
-        INSERT INTO files (book_id, file_path, duration, channels, sample_rate, bitrate)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO files (book_id, file_id, file_path, duration, channels, sample_rate, bitrate)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         "#,
         create_data.book_id,
-        file_path,
+        create_data.file_id,
+        create_data.file_path,
         create_data.duration,
         create_data.channels,
         create_data.sample_rate,
         create_data.bitrate
     )
     .execute(db)
-    .await?;
+    .await
+    .with_context(|| format!("Err inserting {}", create_data.file_path))?;
 
     Ok(())
 }
@@ -83,6 +85,7 @@ pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec
         SELECT
             id,
             book_id,
+            file_id,
             file_path,
             duration,
             channels,
@@ -103,6 +106,7 @@ pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec
             id: r.id.expect("Id doesnt exist"),
             data: CreateFileMetadata {
                 book_id: r.book_id,
+                file_id: Some(r.file_id),
                 file_path: r.file_path,
                 duration: r.duration,
                 channels: r.channels,

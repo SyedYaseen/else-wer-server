@@ -4,3 +4,4 @@ rustybookshelf.db
 rustybookshelf.db-wal
 rustybookshelf.db-shm
 .env
+plan.md

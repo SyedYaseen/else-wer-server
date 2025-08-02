@@ -1,19 +1,17 @@
 use crate::db::audiobooks::{get_audiobook_id, insert_audiobook, insert_file_metadata};
 use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use anyhow::{Ok, anyhow};
-
-use lofty::file::AudioFile;
-use lofty::probe::Probe;
+use futures::future;
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
 use std::result::Result;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::probe::Hint;
-use symphonia::default;
+use std::sync::Arc;
+use symphonia::core::meta;
+use tokio::sync::Semaphore;
+
 use tokio::fs;
 use tokio::process::Command;
-use tokio::task::spawn_blocking;
 
 async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     let mut entries = fs::read_dir(path).await?;
@@ -84,13 +82,6 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
     Ok(())
 }
 
-// Book exists: test - Book 5 Network effect
-// This data/test/Book 5 Network effect/Network effect.m4b
-// 2025-07-25T21:47:37.856978Z ERROR rustybookshelf::api::audiobooks: Error scanning files: No format could be determined from the provided file
-
-//     This data/MarthaWells/The Murderbot Diaries/Book 4 Exit Strategy/Exit Strategy.m4b
-// This data/MarthaWells/The Murderbot Diaries/Book 1 All Systems Red/All Systems Red.m4b
-
 #[derive(Debug, Deserialize)]
 struct FFProbeFormat {
     duration: Option<String>,
@@ -140,6 +131,7 @@ pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> 
 
     Ok(CreateFileMetadata::new(
         path.to_owned(),
+        None,
         duration,
         None,
         None,
@@ -211,17 +203,35 @@ pub async fn scan_for_audiobooks(
                 }
             };
 
-            for file in &book.files {
-                let mut metadata = extract_metadata(&file).await?;
-                metadata.book_id = bookid;
+            let semaphore = Arc::new(Semaphore::new(4));
 
-                match insert_file_metadata(&db, metadata).await {
-                    Result::Ok(_) => (),
-                    Err(_) => {
-                        eprintln!("File: {} already mapped to bookid: {}", file, bookid);
-                    }
-                };
+            let extract_tasks: Vec<_> = book
+                .files
+                .iter()
+                .map(|file| {
+                    let file_path = file.clone();
+                    let permit = semaphore.clone().acquire_owned();
+                    tokio::spawn(async move {
+                        let _permit = permit.await?;
+                        let mut metadata = extract_metadata(&file_path).await?;
+                        metadata.book_id = bookid;
+                        Ok(metadata)
+                    })
+                })
+                .collect();
+
+            let meta_files = future::try_join_all(extract_tasks).await?;
+            // let metadata_files = meta_files.into_iter().filter_map(Result::ok);
+            let mut meta_files = meta_files.into_iter().collect::<anyhow::Result<Vec<_>>>()?;
+            meta_files.sort_by_key(|m| m.file_path.clone());
+
+            println!("{:#?}", meta_files);
+
+            for (index, f) in meta_files.iter_mut().enumerate() {
+                f.file_id = Some(index as i64 + 1);
+                insert_file_metadata(&db, f).await?
             }
+
             Ok(book)
         }));
     }
