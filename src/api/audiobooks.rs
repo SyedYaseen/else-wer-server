@@ -3,7 +3,6 @@ use crate::file_ops::file_ops;
 use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
 use Result::Ok;
-use anyhow::anyhow;
 use axum::body::Body;
 use axum::{
     Json,
@@ -11,7 +10,7 @@ use axum::{
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
-use sqlx::{Pool, Sqlite, pool};
+use sqlx::{Pool, Sqlite};
 
 use serde_json::json;
 use std::io::Write;

@@ -22,7 +22,7 @@ pub struct Progress {
     pub user_id: i64,
     pub book_id: i64,
     pub file_id: i64,
-    pub progress_time_marker: i64,
+    pub progress_ms: i64,
     pub complete: bool,
     pub updated_at: DateTime<Utc>,
 }
@@ -32,7 +32,7 @@ pub struct ProgressUpdate {
     pub user_id: i64,
     pub book_id: i64,
     pub file_id: i64,
-    pub progress_time_marker: i64,
+    pub progress_ms: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

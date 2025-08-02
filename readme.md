@@ -30,6 +30,7 @@
 - Streaming with HTTP range requests
 - Playlist/queue management
 - Optional transcode (with gstreamer or ffmpeg) for low bandwidth
+- Option to organize the books folder based on book/ series/ author data, so the user doesnt have to do it
 
 # Phase 3
 - Include books
@@ -72,7 +73,7 @@ curl -X POST http://localhost:3000/api/update_progress \
     "user_id": 1,
     "book_id": 7,
     "file_id": 6,
-    "progress_time_marker": 10000
+    "progress_ms": 10000
   }' -i
 
 curl localhost:3000/api/file_metadata/1

@@ -10,7 +10,7 @@ pub async fn get_progress_by_fileid(
 ) -> sqlx::Result<Option<Progress>> {
     sqlx::query_as::<_, Progress>(
         r#"
-    SELECT id, user_id, book_id, file_id, progress_time_marker, complete, updated_at
+    SELECT id, user_id, book_id, file_id, progress_ms, complete, updated_at
     FROM progress
     WHERE user_id = ?1 AND book_id = ?2 AND file_id = ?3
     "#,
@@ -29,7 +29,7 @@ pub async fn get_progress_by_bookid(
 ) -> sqlx::Result<Vec<Progress>> {
     sqlx::query_as::<_, Progress>(
         r#"
-    SELECT id, user_id, book_id, file_id, progress_time_marker, complete, updated_at
+    SELECT id, user_id, book_id, file_id, progress_ms, complete, updated_at
     FROM progress
     WHERE user_id = ?1 AND book_id = ?2
     "#,
@@ -43,15 +43,15 @@ pub async fn get_progress_by_bookid(
 pub async fn upsert_progress(db: &Pool<Sqlite>, p: &ProgressUpdate) -> sqlx::Result<()> {
     sqlx::query!(
         r#"
-        INSERT INTO progress (user_id, book_id, file_id, progress_time_marker)
+        INSERT INTO progress (user_id, book_id, file_id, progress_ms)
         VALUES (?1, ?2, ?3, ?4)
         ON CONFLICT(user_id, book_id, file_id) DO UPDATE SET
-            progress_time_marker = excluded.progress_time_marker
+            progress_ms = excluded.progress_ms
         "#,
         p.user_id,
         p.book_id,
         p.file_id,
-        p.progress_time_marker
+        p.progress_ms
     )
     .execute(db)
     .await?;
