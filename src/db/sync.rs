@@ -43,15 +43,18 @@ pub async fn get_progress_by_bookid(
 pub async fn upsert_progress(db: &Pool<Sqlite>, p: &ProgressUpdate) -> sqlx::Result<()> {
     sqlx::query!(
         r#"
-        INSERT INTO progress (user_id, book_id, file_id, progress_ms)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO progress (user_id, book_id, file_id, progress_ms, complete)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(user_id, book_id, file_id) DO UPDATE SET
-            progress_ms = excluded.progress_ms
+            progress_ms = excluded.progress_ms,
+            complete = ?5,
+            updated_at = CURRENT_TIMESTAMP
         "#,
         p.user_id,
         p.book_id,
         p.file_id,
-        p.progress_ms
+        p.progress_ms,
+        p.complete
     )
     .execute(db)
     .await?;

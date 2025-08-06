@@ -1,4 +1,6 @@
-use crate::db::audiobooks::{get_audiobook_id, insert_audiobook, insert_file_metadata};
+use crate::db::audiobooks::{
+    get_audiobook_id, insert_audiobook, insert_file_metadata, update_audiobook_duration,
+};
 use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use anyhow::{Ok, anyhow};
 use futures::future;
@@ -121,7 +123,7 @@ pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> 
         .duration
         .as_deref()
         .and_then(|d| d.parse::<f64>().ok())
-        .map(|d| d as i64);
+        .map(|d| (d * 1000.0) as i64);
 
     let bitrate = ff_data
         .format
@@ -129,9 +131,12 @@ pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> 
         .as_deref()
         .and_then(|b| b.parse::<i64>().ok());
 
+    let file_name = path.split("/").last().unwrap_or_default().to_owned();
+
     Ok(CreateFileMetadata::new(
         path.to_owned(),
         None,
+        file_name,
         duration,
         None,
         None,
@@ -225,13 +230,18 @@ pub async fn scan_for_audiobooks(
             let mut meta_files = meta_files.into_iter().collect::<anyhow::Result<Vec<_>>>()?;
             meta_files.sort_by_key(|m| m.file_path.clone());
 
-            println!("{:#?}", meta_files);
+            let mut total_duration = 0;
 
             for (index, f) in meta_files.iter_mut().enumerate() {
                 f.file_id = Some(index as i64 + 1);
+                total_duration += match f.duration {
+                    Some(v) => v,
+                    None => 0,
+                };
                 insert_file_metadata(&db, f).await?
             }
-
+            book.duration = total_duration;
+            update_audiobook_duration(&db, bookid, &book).await?;
             Ok(book)
         }));
     }

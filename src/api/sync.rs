@@ -43,6 +43,7 @@ pub async fn update_progress(
     State(state): State<AppState>,
     Json(payload): Json<ProgressUpdate>,
 ) -> Result<impl IntoResponse, ApiError> {
+    println!("{:#?}", payload);
     match upsert_progress(&state.db_pool, &payload).await {
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(e) => Err(ApiError::InternalServerError(format!(

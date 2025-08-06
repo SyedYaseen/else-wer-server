@@ -38,6 +38,26 @@ pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
     Ok(id)
 }
 
+pub async fn update_audiobook_duration(
+    db: &Pool<Sqlite>,
+    bookid: i64,
+    book: &AudioBook,
+) -> Result<(), Error> {
+    sqlx::query!(
+        r#"
+        UPDATE audiobooks
+        SET duration = ?1
+        WHERE id = ?2
+        "#,
+        book.duration,
+        bookid
+    )
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn insert_file_metadata(
     db: &Pool<Sqlite>,
     create_data: &mut CreateFileMetadata,
@@ -45,11 +65,12 @@ pub async fn insert_file_metadata(
     // let file_path = create_data.file_path.to_string().to_owned();
     sqlx::query!(
         r#"
-        INSERT INTO files (book_id, file_id, file_path, duration, channels, sample_rate, bitrate)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         create_data.book_id,
         create_data.file_id,
+        create_data.file_name,
         create_data.file_path,
         create_data.duration,
         create_data.channels,
@@ -79,6 +100,21 @@ pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
     Ok(row.0)
 }
 
+pub async fn get_audiobook_by_id(db: &Pool<Sqlite>, bookid: i64) -> Result<AudioBookRow> {
+    let row = sqlx::query_as(
+        r#"
+        SELECT *
+        FROM audiobooks
+        WHERE id = ?1
+        "#,
+    )
+    .bind(bookid)
+    .fetch_one(db)
+    .await?;
+
+    Ok(row)
+}
+
 pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec<FileMetadata>> {
     let rows = sqlx::query!(
         r#"
@@ -86,6 +122,7 @@ pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec
             id,
             book_id,
             file_id,
+            file_name,
             file_path,
             duration,
             channels,
@@ -107,6 +144,7 @@ pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec
             data: CreateFileMetadata {
                 book_id: r.book_id,
                 file_id: Some(r.file_id),
+                file_name: r.file_name,
                 file_path: r.file_path,
                 duration: r.duration,
                 channels: r.channels,

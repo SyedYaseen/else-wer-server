@@ -1,4 +1,4 @@
-use crate::db::audiobooks::{get_files_by_book_id, list_all_books};
+use crate::db::audiobooks::{get_audiobook_by_id, get_files_by_book_id, list_all_books};
 use crate::file_ops::file_ops;
 use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
@@ -87,6 +87,11 @@ pub async fn download_book(
         }
     };
 
+    let cover_art_path = match get_audiobook_by_id(&state.db_pool, book_id).await {
+        Ok(book) => book.cover_art.unwrap_or_default(),
+        Err(_) => "".to_owned(),
+    };
+
     let mut buffer = Vec::new();
     {
         let cursor = std::io::Cursor::new(&mut buffer);
@@ -105,6 +110,13 @@ pub async fn download_book(
                 zip.write_all(&data).unwrap();
             }
         }
+
+        // Add cover art to zip
+        zip.start_file(&cover_art_path, options).unwrap();
+        if let Ok(data) = tokio::fs::read(&cover_art_path).await {
+            zip.write_all(&data).unwrap();
+        }
+
         zip.finish().unwrap();
     }
 

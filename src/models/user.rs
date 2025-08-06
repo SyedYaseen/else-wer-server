@@ -33,6 +33,7 @@ pub struct ProgressUpdate {
     pub book_id: i64,
     pub file_id: i64,
     pub progress_ms: i64,
+    pub complete: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

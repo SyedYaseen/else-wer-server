@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS audiobooks (
     files_location TEXT NOT NULL,
     cover_art TEXT,
     metadata TEXT,
+    duration INTEGER DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (author, title)
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY,
     book_id INTEGER NOT NULL,
     file_id INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
     file_path TEXT NOT NULL,
     duration INTEGER,
     channels INTEGER,

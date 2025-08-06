@@ -24,7 +24,7 @@ pub async fn routes() -> Router<AppState> {
         .route("/scan_files", get(scan_files))
         .route("/list_books", get(list_books))
         // Files
-        .route("/download_book/{fileid}", get(download_book))
+        .route("/download_book/{book_id}", get(download_book))
         .route("/file_metadata/{book_id}", get(file_metadata))
         // Sync
         .route(

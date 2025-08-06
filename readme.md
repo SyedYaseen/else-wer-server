@@ -71,10 +71,15 @@ curl -X POST http://localhost:3000/api/update_progress \
   -H 'content-type: application/json' \
   -d '{
     "user_id": 1,
-    "book_id": 7,
-    "file_id": 6,
-    "progress_ms": 10000
+    "book_id": 5,
+    "file_id": 21,
+    "progress_ms": 119720.00122070312,
+    "complete": false
   }' -i
+
+
+
+  <!-- 1 5 21 119720.00122070312 false -->
 
 curl localhost:3000/api/file_metadata/1
 

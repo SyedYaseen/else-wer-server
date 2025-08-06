@@ -10,6 +10,7 @@ pub struct AudioBookRow {
     pub series: Option<String>,
     pub title: String,
     pub files_location: String,
+    pub duration: i64,
     pub cover_art: Option<String>,
     pub metadata: Option<String>,
 }
@@ -21,6 +22,7 @@ pub struct AudioBook {
     pub title: String,
     pub content_path: String,
     pub cover_art: Option<String>,
+    pub duration: i64,
     pub metadata: Option<String>,
     pub files: Vec<String>,
 }
@@ -38,6 +40,7 @@ impl AudioBook {
             title: title,
             content_path: content_path,
             cover_art: None,
+            duration: 0,
             metadata: None,
             files: Vec::new(),
         }
@@ -48,6 +51,7 @@ impl AudioBook {
 pub struct BaseFileMetadata {
     pub book_id: i64,
     pub file_id: Option<i64>,
+    pub file_name: String,
     pub file_path: String,
     pub duration: Option<i64>,
     pub channels: Option<i64>,
@@ -68,6 +72,7 @@ impl CreateFileMetadata {
     pub fn new(
         file_path: String,
         file_id: Option<i64>,
+        file_name: String,
         duration: Option<i64>,
         channels: Option<i64>,
         sample_rate: Option<i64>,
@@ -76,6 +81,7 @@ impl CreateFileMetadata {
         CreateFileMetadata {
             book_id: -99,
             file_id: file_id,
+            file_name: file_name,
             file_path: file_path,
             duration: duration,
             channels: channels,
