@@ -5,7 +5,7 @@ use sqlx::{Pool, Sqlite};
 pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
     let books = sqlx::query_as::<_, AudioBookRow>(
         r#"
-        SELECT id, author, series, title, files_location, cover_art, metadata
+        SELECT id, author, series, title, files_location, cover_art, duration, metadata
         FROM audiobooks
         ORDER BY author, series, title
         "#,

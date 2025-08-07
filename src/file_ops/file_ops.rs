@@ -4,15 +4,19 @@ use crate::db::audiobooks::{
 use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use anyhow::{Ok, anyhow};
 use futures::future;
+use regex::Regex;
 use serde::Deserialize;
 use sqlx::SqlitePool;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::sync::Arc;
-use symphonia::core::meta;
+use tokio::fs;
 use tokio::sync::Semaphore;
 
-use tokio::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+#[cfg(windows)]
+use std::os::windows::fs::symlink_file;
 use tokio::process::Command;
 
 async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
@@ -144,6 +148,52 @@ pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> 
     ))
 }
 
+pub async fn link_or_copy_cover(source: &str, target: &str) -> anyhow::Result<()> {
+    let source_path = Path::new(source);
+    let target_path = Path::new(target);
+
+    println!("Creating symlink: {:?} -> {:?}", target_path, source_path);
+
+    if !source_path.exists() {
+        return Err(anyhow!("Source does not exist: {:?}", source_path));
+    }
+
+    if let Some(parent) = target_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent).await {
+            println!("err creating dir {}", e);
+        };
+    }
+
+    // if let Some(parent) = target_path.parent() {
+    //     println!("Attempting to create directory at: {:?}", parent);
+    //     if let Err(e) = fs::create_dir_all(parent).await {
+    //         println!("Failed to create directory {:?}: {}", parent, e);
+    //         println!(
+    //             "Current permissions: {:?}",
+    //             parent.metadata()?.permissions()
+    //         );
+    //         return Err(e.into());
+    //     };
+    // }
+
+    #[cfg(unix)]
+    {
+        symlink(source_path, target_path)?;
+    }
+    println!("This in 2");
+
+    #[cfg(windows)]
+    {
+        // Windows only allows symlink creation with elevated privileges or dev mode
+        if let Err(_) = symlink_file(source_path, target_path) {
+            // fallback to copy
+            fs::copy(source_path, target_path)?;
+        }
+    }
+
+    Ok(())
+}
+
 async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
     let mut entries = fs::read_dir(&book.content_path).await?;
 
@@ -154,8 +204,30 @@ async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
             let path = entry.path();
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                 match ext.to_lowercase().as_str() {
-                    "jpg" | "jpeg" | "png" => {
-                        book.cover_art = Some(path.to_string_lossy().into_owned());
+                    "jpg" | "jpeg" | "png" | "webp" => {
+                        // book.cover_art = Some(path.to_string_lossy().into_owned());
+                        let imageid = &book.title.replace(' ', "_").to_lowercase().to_owned();
+
+                        let re = Regex::new(r"[^a-z0-9_\-\.]").unwrap();
+                        let cover_name = re.replace_all(&imageid, "");
+
+                        let public_name = format!("{}.{}", cover_name, ext);
+                        let public_path =
+                            std::env::current_dir()?.join("covers").join(&public_name);
+                        // println!("FinalPath {:#?}", public_path);
+                        // println!("SourcePath {:#?}", &path.to_string_lossy());
+                        // Create symlink or copy (see helper from earlier)
+                        let source_path = std::env::current_dir()?.join(path);
+
+                        link_or_copy_cover(
+                            &source_path.to_string_lossy(),
+                            &public_path.to_string_lossy(),
+                        )
+                        .await?;
+                        println!("This 2");
+
+                        // Save public URL to book
+                        book.cover_art = Some(format!("/covers/{}", public_name));
                     }
                     "mp3" | "m4b" | "flac" | "m4a" => {
                         book.files.push(path.to_string_lossy().into_owned());

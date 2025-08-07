@@ -22,3 +22,5 @@ argon2 = {version = "0.5.3", features = ["std"]}
 jsonwebtoken = "9.3.1"
 chrono = { version = "0.4.41", features = ["serde"] }
 futures = "0.3.31"
+tower-http = { version = "0.6.6", features = ["fs"] }
+regex = "1.11.1"

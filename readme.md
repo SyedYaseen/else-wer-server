@@ -94,3 +94,5 @@ curl -X POST http://localhost:3000/api/create_user \
   -d '{"username": "valerie", "password": "mypassword"}'
 
 http://192.168.1.3:3000/api/login valerie mypassword
+
+curl localhost:3000/api/covers//app/static/covers/elder_race_[2021].jpg

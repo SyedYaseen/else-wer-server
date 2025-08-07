@@ -4,6 +4,7 @@ use axum::{
     response::{Html, IntoResponse},
     routing::{get, post},
 };
+use tower_http::services::ServeDir;
 mod api_error;
 mod audiobooks;
 mod sync;
@@ -15,10 +16,13 @@ use crate::{
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
+    file_ops::file_ops::link_or_copy_cover,
 };
 use audiobooks::scan_files;
+
 pub async fn routes() -> Router<AppState> {
     Router::new()
+        .nest_service("/covers", ServeDir::new("covers"))
         .route("/hello", get(hello))
         // Books
         .route("/scan_files", get(scan_files))
@@ -43,5 +47,18 @@ pub async fn routes() -> Router<AppState> {
 
 async fn hello(State(state): State<AppState>) -> impl IntoResponse {
     println!("{}", state.config.book_files);
+    let curr_dir = std::env::current_dir().unwrap();
+    let src_p = "data/AdrianTchaikovsky/Elder Race [2021]/cover.jpg";
+    let dest_p = "covers/test.jpg";
+
+    let source = std::env::current_dir().unwrap().join(&src_p);
+    let target = curr_dir.clone().join(&dest_p);
+    if let Ok(_) = link_or_copy_cover(&source.to_str().unwrap(), &target.to_str().unwrap()).await {
+        println!(
+            "{} {}",
+            &source.to_str().unwrap(),
+            &target.to_str().unwrap()
+        )
+    }
     Html("<h1>Hello</h1>")
 }
