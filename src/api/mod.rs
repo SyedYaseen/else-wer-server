@@ -16,7 +16,7 @@ use crate::{
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
-    file_ops::file_ops::link_or_copy_cover,
+    file_ops::file_ops::create_cover_link,
 };
 use audiobooks::scan_files;
 
@@ -53,12 +53,6 @@ async fn hello(State(state): State<AppState>) -> impl IntoResponse {
 
     let source = std::env::current_dir().unwrap().join(&src_p);
     let target = curr_dir.clone().join(&dest_p);
-    if let Ok(_) = link_or_copy_cover(&source.to_str().unwrap(), &target.to_str().unwrap()).await {
-        println!(
-            "{} {}",
-            &source.to_str().unwrap(),
-            &target.to_str().unwrap()
-        )
-    }
+
     Html("<h1>Hello</h1>")
 }

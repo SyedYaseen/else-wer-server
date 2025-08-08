@@ -148,39 +148,36 @@ pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> 
     ))
 }
 
-pub async fn link_or_copy_cover(source: &str, target: &str) -> anyhow::Result<()> {
-    let source_path = Path::new(source);
-    let target_path = Path::new(target);
+pub async fn create_cover_link(
+    source: &PathBuf,
+    ext: &str,
+    book: &mut AudioBook,
+) -> anyhow::Result<()> {
+    let cover_name = &book.title.replace(' ', "_").to_lowercase().to_owned();
+    let re = Regex::new(r"[^a-z0-9_\-\.]").unwrap();
+    let cover_name = re.replace_all(&cover_name, "");
 
-    println!("Creating symlink: {:?} -> {:?}", target_path, source_path);
+    let link_name = format!("{}.{}", cover_name, ext);
+    let link_path = std::env::current_dir()?.join("covers").join(&link_name);
+
+    let source_path = std::env::current_dir()?.join(source);
+
+    println!("Creating symlink: {:?} -> {:?}", link_path, source_path);
 
     if !source_path.exists() {
         return Err(anyhow!("Source does not exist: {:?}", source_path));
     }
 
-    if let Some(parent) = target_path.parent() {
+    if let Some(parent) = link_path.parent() {
         if let Err(e) = fs::create_dir_all(parent).await {
             println!("err creating dir {}", e);
         };
     }
 
-    // if let Some(parent) = target_path.parent() {
-    //     println!("Attempting to create directory at: {:?}", parent);
-    //     if let Err(e) = fs::create_dir_all(parent).await {
-    //         println!("Failed to create directory {:?}: {}", parent, e);
-    //         println!(
-    //             "Current permissions: {:?}",
-    //             parent.metadata()?.permissions()
-    //         );
-    //         return Err(e.into());
-    //     };
-    // }
-
     #[cfg(unix)]
     {
-        symlink(source_path, target_path)?;
+        symlink(source_path, link_path)?;
     }
-    println!("This in 2");
 
     #[cfg(windows)]
     {
@@ -190,6 +187,8 @@ pub async fn link_or_copy_cover(source: &str, target: &str) -> anyhow::Result<()
             fs::copy(source_path, target_path)?;
         }
     }
+
+    book.cover_art = Some(format!("/covers/{}", link_name));
 
     Ok(())
 }
@@ -205,29 +204,7 @@ async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                 match ext.to_lowercase().as_str() {
                     "jpg" | "jpeg" | "png" | "webp" => {
-                        // book.cover_art = Some(path.to_string_lossy().into_owned());
-                        let imageid = &book.title.replace(' ', "_").to_lowercase().to_owned();
-
-                        let re = Regex::new(r"[^a-z0-9_\-\.]").unwrap();
-                        let cover_name = re.replace_all(&imageid, "");
-
-                        let public_name = format!("{}.{}", cover_name, ext);
-                        let public_path =
-                            std::env::current_dir()?.join("covers").join(&public_name);
-                        // println!("FinalPath {:#?}", public_path);
-                        // println!("SourcePath {:#?}", &path.to_string_lossy());
-                        // Create symlink or copy (see helper from earlier)
-                        let source_path = std::env::current_dir()?.join(path);
-
-                        link_or_copy_cover(
-                            &source_path.to_string_lossy(),
-                            &public_path.to_string_lossy(),
-                        )
-                        .await?;
-                        println!("This 2");
-
-                        // Save public URL to book
-                        book.cover_art = Some(format!("/covers/{}", public_name));
+                        create_cover_link(&path, ext, book).await?;
                     }
                     "mp3" | "m4b" | "flac" | "m4a" => {
                         book.files.push(path.to_string_lossy().into_owned());

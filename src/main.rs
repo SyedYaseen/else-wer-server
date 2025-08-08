@@ -21,7 +21,6 @@ pub struct AppState {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
-    println!("CWD: {:?}", std::env::current_dir().unwrap());
 
     tracing_subscriber::registry()
         .with(
@@ -42,7 +41,6 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = Router::new()
-        // .nest_service("/covers", ServeDir::new("covers"))
         .nest("/api", api::routes().await)
         .with_state(state);
 
