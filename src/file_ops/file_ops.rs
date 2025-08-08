@@ -162,7 +162,7 @@ pub async fn create_cover_link(
 
     let source_path = std::env::current_dir()?.join(source);
 
-    println!("Creating symlink: {:?} -> {:?}", link_path, source_path);
+    // println!("Creating symlink: {:?} -> {:?}", link_path, source_path);
 
     if !source_path.exists() {
         return Err(anyhow!("Source does not exist: {:?}", source_path));
@@ -176,7 +176,9 @@ pub async fn create_cover_link(
 
     #[cfg(unix)]
     {
-        symlink(source_path, link_path)?;
+        if let Err(e) = symlink(source_path, link_path) {
+            eprintln!("Err: {} while creating cover art link {}", e, link_name);
+        };
     }
 
     #[cfg(windows)]
@@ -237,6 +239,7 @@ pub async fn scan_for_audiobooks(
 
     let mut audio_books: Vec<AudioBook> = Vec::new();
     let _ = recursive_dirscan(&path, &mut audio_books).await?;
+    println!("{:#?} {:#?}", audio_books, path);
 
     let mut tasks = vec![];
     for mut book in audio_books {
@@ -249,9 +252,13 @@ pub async fn scan_for_audiobooks(
                 Err(e) => {
                     let msg = e.to_string();
                     if msg.contains("UNIQUE constraint failed") {
-                        eprintln!("Book exists: {} - {}", book.author, book.title);
+                        eprintln!("{} by {} already exists in db", book.title, book.author);
                         get_audiobook_id(&db, &book).await?
                     } else {
+                        eprintln!(
+                            "Some other err when inserting book {} by {}",
+                            book.author, book.title
+                        );
                         return Err(e.into());
                     }
                 }
@@ -275,8 +282,10 @@ pub async fn scan_for_audiobooks(
                 .collect();
 
             let meta_files = future::try_join_all(extract_tasks).await?;
+
             // let metadata_files = meta_files.into_iter().filter_map(Result::ok);
             let mut meta_files = meta_files.into_iter().collect::<anyhow::Result<Vec<_>>>()?;
+
             meta_files.sort_by_key(|m| m.file_path.clone());
 
             let mut total_duration = 0;
@@ -289,6 +298,7 @@ pub async fn scan_for_audiobooks(
                 };
                 insert_file_metadata(&db, f).await?
             }
+
             book.duration = total_duration;
             update_audiobook_duration(&db, bookid, &book).await?;
             Ok(book)

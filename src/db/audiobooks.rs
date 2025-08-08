@@ -63,6 +63,7 @@ pub async fn insert_file_metadata(
     create_data: &mut CreateFileMetadata,
 ) -> anyhow::Result<()> {
     // let file_path = create_data.file_path.to_string().to_owned();
+    match 
     sqlx::query!(
         r#"
         INSERT INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
@@ -79,9 +80,15 @@ pub async fn insert_file_metadata(
     )
     .execute(db)
     .await
-    .with_context(|| format!("Err inserting {}", create_data.file_path))?;
+    .with_context(|| format!("Err adding files for {}", create_data.file_name)) {
+        Err(e) => {
+            eprint!("{}" , e);
+            Ok(())
+        },
+        _ => Ok(())
+    }
 
-    Ok(())
+    // Ok(())
 }
 
 pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64> {

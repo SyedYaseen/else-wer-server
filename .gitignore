@@ -1,5 +1,6 @@
 /target
 /data
+/datatest
 rustybookshelf.db
 rustybookshelf.db-wal
 rustybookshelf.db-shm
