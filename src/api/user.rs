@@ -1,6 +1,9 @@
 use crate::db::user::{self, get_user_by_username};
 use crate::models::user::{Claims, User};
-use crate::{AppState, models::user::UserDto};
+use crate::{
+    AppState,
+    models::user::{LoginDto, UserDto},
+};
 use anyhow::Result;
 use argon2::{
     Argon2,
@@ -12,25 +15,7 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::json;
 use sqlx::{Pool, Sqlite};
 
-pub async fn login(
-    State(state): State<AppState>,
-    Json(payload): Json<UserDto>,
-) -> impl IntoResponse {
-    let db: &Pool<Sqlite> = &state.db_pool;
-    let config = &state.config;
-
-    let jwt = config.jwt_secret.as_ref().unwrap();
-    let jwt_bytes = jwt.as_bytes();
-
-    match auth_and_issue_jwt(&payload, db, &jwt_bytes).await {
-        Ok(token) => (StatusCode::ACCEPTED, Json(json!({ "token": token }))),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": format!("Login failed: {}", e) })),
-        ),
-    }
-}
-
+// Create user
 pub async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<UserDto>,
@@ -65,13 +50,40 @@ async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User> {
 
     let password_hash = argon2.hash_password(&password_bytes, &salt)?.to_string();
 
-    let user = user::create_user(db, &user.username, &password_hash, &salt.to_string()).await?;
+    let user = user::create_user(
+        db,
+        &user.username,
+        &user.is_admin,
+        &password_hash,
+        &salt.to_string(),
+    )
+    .await?;
 
     Ok(user)
 }
 
+// login
+pub async fn login(
+    State(state): State<AppState>,
+    Json(payload): Json<LoginDto>,
+) -> impl IntoResponse {
+    let db: &Pool<Sqlite> = &state.db_pool;
+    let config = &state.config;
+
+    let jwt = config.jwt_secret.as_ref().unwrap(); // TODO: Handle unwrap properly
+    let jwt_bytes = jwt.as_bytes();
+
+    match auth_and_issue_jwt(&payload, db, &jwt_bytes).await {
+        Ok(token) => (StatusCode::ACCEPTED, Json(json!({ "token": token }))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("Login failed: {}", e) })),
+        ),
+    }
+}
+
 async fn auth_and_issue_jwt(
-    user_input: &UserDto,
+    user_input: &LoginDto,
     db: &Pool<Sqlite>,
     jwt_secret: &[u8],
 ) -> Result<String> {
@@ -86,6 +98,11 @@ async fn auth_and_issue_jwt(
 
         let claims = Claims {
             sub: user.id,
+            role: if user.is_admin == true {
+                "admin".to_owned()
+            } else {
+                "user".to_owned()
+            },
             username: user.username.clone(),
             iat: now.timestamp() as usize,
             exp: exp.timestamp() as usize,

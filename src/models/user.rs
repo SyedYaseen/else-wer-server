@@ -6,12 +6,20 @@ use sqlx::prelude::FromRow;
 pub struct UserDto {
     pub username: String,
     pub password: String,
+    pub is_admin: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoginDto {
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: i64,
     pub username: String,
+    pub is_admin: bool,
     pub password_hash: String,
     pub salt: String,
 }
@@ -39,6 +47,7 @@ pub struct ProgressUpdate {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: i64,         // subject, usually user ID
+    pub role: String,     // "admin" or "user"
     pub username: String, // optional additional info
     pub exp: usize,       // expiration timestamp (seconds since epoch)
     pub iat: usize,       // issued at timestamp

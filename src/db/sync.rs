@@ -47,8 +47,11 @@ pub async fn upsert_progress(db: &Pool<Sqlite>, p: &ProgressUpdate) -> sqlx::Res
         VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(user_id, book_id, file_id) DO UPDATE SET
             progress_ms = excluded.progress_ms,
-            complete = ?5,
+            complete = excluded.complete,
             updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = excluded.user_id 
+        AND book_id = excluded.book_id 
+        AND file_id = excluded.file_id
         "#,
         p.user_id,
         p.book_id,

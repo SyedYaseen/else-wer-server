@@ -82,7 +82,7 @@ pub async fn insert_file_metadata(
     .await
     .with_context(|| format!("Err adding files for {}", create_data.file_name)) {
         Err(e) => {
-            eprint!("{}" , e);
+            // eprint!("{}" , e);
             Ok(())
         },
         _ => Ok(())

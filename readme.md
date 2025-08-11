@@ -85,14 +85,35 @@ curl localhost:3000/api/file_metadata/1
 
 curl localhost:3000/api/get_progress/1/7/6
 
+
+
+http://192.168.1.3:3000/api/login valerie mypassword
+
+curl localhost:3000/api/covers//app/static/covers/elder_race_[2021].jpg
+
+User
 curl -X POST http://localhost:3000/api/create_user \
   -H "Content-Type: application/json" \
-  -d '{"username": "valerie", "password": "mypassword"}'
+  -d '{"username": "valerie", "password": "mypassword", "is_admin": false}'
 
   curl -X POST http://192.168.1.3:3000/api/login \
   -H "Content-Type: application/json" \
   -d '{"username": "valerie", "password": "mypassword"}'
 
-http://192.168.1.3:3000/api/login valerie mypassword
 
-curl localhost:3000/api/covers//app/static/covers/elder_race_[2021].jpg
+Admin
+curl -X POST http://localhost:3000/api/create_user \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin", "is_admin": true}'
+
+  curl -X POST http://192.168.1.3:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+
+  valerie
+  curl -X GET http://localhost:3000/api/hello \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo"
+
+  admin
+  curl -X GET http://localhost:3000/api/hello \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8"

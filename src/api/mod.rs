@@ -7,12 +7,15 @@ use axum::{
 use tower_http::services::ServeDir;
 mod api_error;
 mod audiobooks;
+mod auth_extractor;
+mod middleware;
 mod sync;
 mod user;
 use crate::{
     AppState,
     api::{
         audiobooks::{download_book, file_metadata, list_books},
+        auth_extractor::AuthUser,
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
@@ -45,7 +48,11 @@ pub async fn routes() -> Router<AppState> {
         .route("/login", post(login))
 }
 
-async fn hello(State(state): State<AppState>) -> impl IntoResponse {
+async fn hello(State(state): State<AppState>, AuthUser(claims): AuthUser) -> impl IntoResponse {
+    println!(
+        "Hello {}, role: {} id: {}",
+        claims.username, claims.role, claims.sub
+    );
     println!("{}", state.config.book_files);
     let curr_dir = std::env::current_dir().unwrap();
     let src_p = "data/AdrianTchaikovsky/Elder Race [2021]/cover.jpg";

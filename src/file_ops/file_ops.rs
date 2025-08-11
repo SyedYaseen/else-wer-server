@@ -239,7 +239,7 @@ pub async fn scan_for_audiobooks(
 
     let mut audio_books: Vec<AudioBook> = Vec::new();
     let _ = recursive_dirscan(&path, &mut audio_books).await?;
-    println!("{:#?} {:#?}", audio_books, path);
+    // println!("{:#?} {:#?}", audio_books, path);
 
     let mut tasks = vec![];
     for mut book in audio_books {
