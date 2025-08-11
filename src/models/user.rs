@@ -37,7 +37,6 @@ pub struct Progress {
 
 #[derive(Debug, Deserialize)]
 pub struct ProgressUpdate {
-    pub user_id: i64,
     pub book_id: i64,
     pub file_id: i64,
     pub progress_ms: i64,

@@ -40,7 +40,11 @@ pub async fn get_progress_by_bookid(
     .await
 }
 
-pub async fn upsert_progress(db: &Pool<Sqlite>, p: &ProgressUpdate) -> sqlx::Result<()> {
+pub async fn upsert_progress(
+    db: &Pool<Sqlite>,
+    user_id: i64,
+    p: &ProgressUpdate,
+) -> sqlx::Result<()> {
     sqlx::query!(
         r#"
         INSERT INTO progress (user_id, book_id, file_id, progress_ms, complete)
@@ -53,7 +57,7 @@ pub async fn upsert_progress(db: &Pool<Sqlite>, p: &ProgressUpdate) -> sqlx::Res
         AND book_id = excluded.book_id 
         AND file_id = excluded.file_id
         "#,
-        p.user_id,
+        user_id,
         p.book_id,
         p.file_id,
         p.progress_ms,

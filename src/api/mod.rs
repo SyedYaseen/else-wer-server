@@ -35,24 +35,21 @@ pub async fn routes() -> Router<AppState> {
         .route("/file_metadata/{book_id}", get(file_metadata))
         // Sync
         .route(
-            "/get_file_progress/{user_id}/{book_id}/{file_id}",
+            "/get_file_progress/{book_id}/{file_id}",
             get(get_file_progress),
         )
-        .route(
-            "/get_book_progress/{user_id}/{book_id}",
-            get(get_book_progress),
-        )
+        .route("/get_book_progress/{book_id}", get(get_book_progress))
         .route("/update_progress", post(update_progress))
         // User
         .route("/create_user", post(create_user))
         .route("/login", post(login))
 }
 
-async fn hello(State(state): State<AppState>, AuthUser(claims): AuthUser) -> impl IntoResponse {
-    println!(
-        "Hello {}, role: {} id: {}",
-        claims.username, claims.role, claims.sub
-    );
+async fn hello(State(state): State<AppState>) -> impl IntoResponse {
+    // println!(
+    //     "Hello {}, role: {} id: {}",
+    //     claims.username, claims.role, claims.sub
+    // );
     println!("{}", state.config.book_files);
     let curr_dir = std::env::current_dir().unwrap();
     let src_p = "data/AdrianTchaikovsky/Elder Race [2021]/cover.jpg";

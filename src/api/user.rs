@@ -1,3 +1,4 @@
+use crate::api::middleware::AdminUser;
 use crate::db::user::{self, get_user_by_username};
 use crate::models::user::{Claims, User};
 use crate::{
@@ -17,6 +18,7 @@ use sqlx::{Pool, Sqlite};
 
 // Create user
 pub async fn create_user(
+    AdminUser(_claims): AdminUser,
     State(state): State<AppState>,
     Json(payload): Json<UserDto>,
 ) -> impl IntoResponse {
