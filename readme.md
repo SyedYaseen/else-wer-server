@@ -131,3 +131,11 @@ curl -X POST http://localhost:3000/api/create_user \
 -H "Content-Type: application/json" \
 -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8" \
 -d '{"username": "test1", "password": "mypassword", "is_admin": false}'
+
+cross run --release --target armv7-unknown-linux-gnueabihf
+cross run --release --target aarch64-unknown-linux-gnu
+scp target/armv7-unknown-linux-gnueabihf/release/rustybookshelf yaseen@192.168.1.12:/home/yaseen/rustybookshelf
+
+Works
+cross build --target armv7-unknown-linux-musleabihf --release
+scp target/armv7-unknown-linux-musleabihf/release/rustybookshelf yaseen@192.168.1.12:/home/yaseen/

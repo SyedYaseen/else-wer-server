@@ -1,5 +1,4 @@
 use crate::models::user::User;
-
 use sqlx::{Pool, Result, Sqlite};
 
 pub async fn create_user(
@@ -63,15 +62,23 @@ pub async fn update_user_password(
     Ok(())
 }
 
-pub async fn delete_user(db: &Pool<Sqlite>, user_id: i64) -> Result<()> {
-    sqlx::query(
-        r#"
-        DELETE FROM users WHERE id = $1
-        "#,
-    )
-    .bind(user_id)
-    .execute(db)
-    .await?;
+pub async fn admin_exists(db: &Pool<Sqlite>) -> Result<i64> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+        .fetch_one(db)
+        .await?;
 
-    Ok(())
+    Ok(count)
 }
+
+// pub async fn delete_user(db: &Pool<Sqlite>, user_id: i64) -> Result<()> {
+//     sqlx::query(
+//         r#"
+//         DELETE FROM users WHERE id = $1
+//         "#,
+//     )
+//     .bind(user_id)
+//     .execute(db)
+//     .await?;
+
+//     Ok(())
+// }

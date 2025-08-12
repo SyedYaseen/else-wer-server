@@ -10,7 +10,7 @@ mod audiobooks;
 mod auth_extractor;
 mod middleware;
 mod sync;
-mod user;
+pub mod user;
 use crate::{
     AppState,
     api::{

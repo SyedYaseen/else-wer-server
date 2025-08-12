@@ -44,7 +44,7 @@ pub async fn create_user(
     }
 }
 
-async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User> {
+pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User> {
     let argon2 = Argon2::default();
     let password_bytes = &user.password.clone().into_bytes();
 
