@@ -4,14 +4,16 @@ use crate::db::audiobooks::{
 use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use anyhow::{Ok, anyhow};
 use futures::future;
+use lofty::file::AudioFile;
+use lofty::probe::Probe;
 use regex::Regex;
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::sync::Arc;
-use tokio::fs;
 use tokio::sync::Semaphore;
+use tokio::{fs, task};
 
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
@@ -29,7 +31,11 @@ async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     return Ok(false);
 }
 
-async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> anyhow::Result<()> {
+async fn recursive_dirscan(
+    path: &PathBuf,
+    audio_books: &mut Vec<AudioBook>,
+    last_path_component: &str,
+) -> anyhow::Result<()> {
     let mut entries = fs::read_dir(path).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -48,15 +54,29 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
             let mut sub_dir_path = PathBuf::from(path);
             sub_dir_path.push(sub_dir);
 
-            if let Err(e) = Box::pin(recursive_dirscan(&sub_dir_path, audio_books)).await {
+            if let Err(e) = Box::pin(recursive_dirscan(
+                &sub_dir_path,
+                audio_books,
+                last_path_component,
+            ))
+            .await
+            {
                 eprintln!("Err reading folder {e}");
                 continue;
             }
 
-            let v: Vec<_> = sub_dir_path
+            let mut v: Vec<_> = sub_dir_path
                 .components()
                 .map(|c| c.as_os_str().to_str().unwrap_or("").to_string())
                 .collect();
+
+            if sub_dir_path.is_absolute() {
+                if let Some(index) = &v.iter().position(|c| c == last_path_component) {
+                    v.drain(..index);
+                }
+            }
+
+            // println!("{:#?}", v);
 
             let (author, series, title): (String, Option<String>, String) = match v.as_slice() {
                 [_, author, series, title, ..] => (
@@ -88,64 +108,37 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-struct FFProbeFormat {
-    duration: Option<String>,
-    bit_rate: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FFProbeData {
-    format: FFProbeFormat,
-}
-
 pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            path,
-        ])
-        .output()
-        .await
-        .map_err(|e| anyhow!("Failed to run ffprobe: {e}"))?;
+    let path_owned = path.to_owned();
 
-    if !output.status.success() {
-        return Err(anyhow!("ffprobe failed for file '{}'", path));
-    }
+    let metadata = task::spawn_blocking(move || {
+        let tagged_file = Probe::open(&path_owned)?.read()?;
 
-    let json_str = String::from_utf8_lossy(&output.stdout);
-    let ff_data: FFProbeData = serde_json::from_str(&json_str)
-        .map_err(|e| anyhow!("Failed to parse ffprobe JSON: {e}"))?;
+        let properties = tagged_file.properties();
 
-    let duration = ff_data
-        .format
-        .duration
-        .as_deref()
-        .and_then(|d| d.parse::<f64>().ok())
-        .map(|d| (d * 1000.0) as i64);
+        let duration_ms = properties.duration().as_millis() as i64;
 
-    let bitrate = ff_data
-        .format
-        .bit_rate
-        .as_deref()
-        .and_then(|b| b.parse::<i64>().ok());
+        let bitrate = properties.audio_bitrate().map(|b| b as i64);
 
-    let file_name = path.split("/").last().unwrap_or_default().to_owned();
+        let file_name = Path::new(&path_owned)
+            .file_name()
+            .and_then(|os_str| os_str.to_str())
+            .unwrap_or_default()
+            .to_string();
 
-    Ok(CreateFileMetadata::new(
-        path.to_owned(),
-        None,
-        file_name,
-        duration,
-        None,
-        None,
-        bitrate,
-    ))
+        Ok(CreateFileMetadata::new(
+            path_owned,
+            None,
+            file_name,
+            Some(duration_ms),
+            None,
+            None,
+            bitrate,
+        ))
+    })
+    .await??;
+
+    Ok(metadata)
 }
 
 pub async fn create_cover_link(
@@ -224,7 +217,12 @@ pub async fn scan_for_audiobooks(
     path_str: &str,
     db: &SqlitePool,
 ) -> anyhow::Result<Vec<AudioBook>> {
-    let path = PathBuf::from(path_str);
+    let path: PathBuf = PathBuf::from(path_str);
+    let last_path_component = path
+        .iter()
+        .last()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
 
     if !path.exists() {
         println!("Attempting to create dir {}", path.display());
@@ -238,7 +236,7 @@ pub async fn scan_for_audiobooks(
     }
 
     let mut audio_books: Vec<AudioBook> = Vec::new();
-    let _ = recursive_dirscan(&path, &mut audio_books).await?;
+    let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;
     // println!("{:#?} {:#?}", audio_books, path);
 
     let mut tasks = vec![];

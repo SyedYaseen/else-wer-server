@@ -63,7 +63,7 @@ pub async fn update_user_password(
 }
 
 pub async fn admin_exists(db: &Pool<Sqlite>) -> Result<i64> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_admin = 1")
         .fetch_one(db)
         .await?;
 

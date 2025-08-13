@@ -41,7 +41,7 @@ pub async fn list_books(
 
 pub async fn scan_files(
     State(state): State<AppState>,
-    AuthUser(claims): AuthUser,
+    AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
     let path = &state.config.book_files;
     let db = &state.db_pool;

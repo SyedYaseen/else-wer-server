@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Err connecting to database");
 
-    ensure_admin_user(&db_pool);
+    ensure_admin_user(&db_pool).await.unwrap();
 
     let state = AppState {
         db_pool: db_pool,
