@@ -1,5 +1,3 @@
-use std::ffi::OsString;
-
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 

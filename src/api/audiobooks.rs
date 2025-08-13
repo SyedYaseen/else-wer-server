@@ -1,5 +1,5 @@
 use crate::api::auth_extractor::AuthUser;
-use crate::db::audiobooks::{get_audiobook_by_id, get_files_by_book_id, list_all_books};
+use crate::db::audiobooks::{get_files_by_book_id, list_all_books};
 use crate::file_ops::file_ops;
 use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
@@ -20,7 +20,7 @@ use zip::write::FileOptions;
 
 pub async fn list_books(
     State(state): State<AppState>,
-    AuthUser(claims): AuthUser,
+    AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
     match list_all_books(&db).await {
@@ -65,7 +65,7 @@ pub async fn scan_files(
 pub async fn download_book(
     State(state): State<AppState>,
     Path(book_id): Path<i64>,
-    AuthUser(claims): AuthUser,
+    AuthUser(_claims): AuthUser,
 ) -> impl IntoResponse {
     let files = match get_file_metadata(&state.db_pool, book_id).await {
         Ok(f) => f,
@@ -96,18 +96,6 @@ pub async fn download_book(
                 zip.write_all(&data).unwrap();
             }
         }
-
-        // let cover_art_path = match get_audiobook_by_id(&state.db_pool, book_id).await {
-        //     Ok(book) => book.cover_art.unwrap_or_default(),
-        //     Err(_) => "".to_owned(),
-        // };
-
-        // Add cover art to zip
-        // zip.start_file(&cover_art_path, options).unwrap();
-        // if let Ok(data) = tokio::fs::read(&cover_art_path).await {
-        //     zip.write_all(&data).unwrap();
-        // }
-
         zip.finish().unwrap();
     }
 
@@ -125,7 +113,7 @@ pub async fn download_book(
 
 pub async fn file_metadata(
     State(state): State<AppState>,
-    AuthUser(claims): AuthUser,
+    AuthUser(_claims): AuthUser,
     Path(book_id): Path<i64>,
 ) -> Result<impl IntoResponse, ApiError> {
     match get_file_metadata(&state.db_pool, book_id).await {

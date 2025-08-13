@@ -7,7 +7,6 @@ use futures::future;
 use lofty::file::AudioFile;
 use lofty::probe::Probe;
 use regex::Regex;
-use serde::Deserialize;
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 use std::result::Result;
@@ -19,7 +18,6 @@ use tokio::{fs, task};
 use std::os::unix::fs::symlink;
 #[cfg(windows)]
 use std::os::windows::fs::symlink_file;
-use tokio::process::Command;
 
 async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     let mut entries = fs::read_dir(path).await?;

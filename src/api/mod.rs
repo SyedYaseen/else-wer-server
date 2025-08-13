@@ -15,11 +15,9 @@ use crate::{
     AppState,
     api::{
         audiobooks::{download_book, file_metadata, list_books},
-        auth_extractor::AuthUser,
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
-    file_ops::file_ops::create_cover_link,
 };
 use audiobooks::scan_files;
 
@@ -45,18 +43,18 @@ pub async fn routes() -> Router<AppState> {
         .route("/login", post(login))
 }
 
-async fn hello(State(state): State<AppState>) -> impl IntoResponse {
+async fn hello(State(_state): State<AppState>) -> impl IntoResponse {
     // println!(
     //     "Hello {}, role: {} id: {}",
     //     claims.username, claims.role, claims.sub
     // );
-    println!("{}", state.config.book_files);
-    let curr_dir = std::env::current_dir().unwrap();
-    let src_p = "data/AdrianTchaikovsky/Elder Race [2021]/cover.jpg";
-    let dest_p = "covers/test.jpg";
+    // println!("{}", state.config.book_files);
+    // let curr_dir = std::env::current_dir().unwrap();
+    // let src_p = "data/AdrianTchaikovsky/Elder Race [2021]/cover.jpg";
+    // let dest_p = "covers/test.jpg";
 
-    let source = std::env::current_dir().unwrap().join(&src_p);
-    let target = curr_dir.clone().join(&dest_p);
+    // let source = std::env::current_dir().unwrap().join(&src_p);
+    // let target = curr_dir.clone().join(&dest_p);
 
     Html("<h1>Hello</h1>")
 }

@@ -7,7 +7,7 @@ use crate::{
 use Result::Ok;
 use axum::{
     Json,
-    extract::{FromRequestParts, Path, State},
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -30,7 +30,7 @@ pub async fn get_file_progress(
 pub async fn get_book_progress(
     State(state): State<AppState>,
     AuthUser(claims): AuthUser,
-    Path((book_id)): Path<(i64)>,
+    Path(book_id): Path<i64>,
 ) -> impl IntoResponse {
     match get_progress_by_bookid(&state.db_pool, claims.sub, book_id).await {
         Ok(rows) => Json(rows).into_response(),

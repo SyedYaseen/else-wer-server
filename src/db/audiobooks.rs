@@ -81,7 +81,7 @@ pub async fn insert_file_metadata(
     .execute(db)
     .await
     .with_context(|| format!("Err adding files for {}", create_data.file_name)) {
-        Err(e) => {
+        Err(_) => {
             // eprint!("{}" , e);
             Ok(())
         },
@@ -107,20 +107,20 @@ pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
     Ok(row.0)
 }
 
-pub async fn get_audiobook_by_id(db: &Pool<Sqlite>, bookid: i64) -> Result<AudioBookRow> {
-    let row = sqlx::query_as(
-        r#"
-        SELECT *
-        FROM audiobooks
-        WHERE id = ?1
-        "#,
-    )
-    .bind(bookid)
-    .fetch_one(db)
-    .await?;
+// pub async fn get_audiobook_by_id(db: &Pool<Sqlite>, bookid: i64) -> Result<AudioBookRow> {
+//     let row = sqlx::query_as(
+//         r#"
+//         SELECT *
+//         FROM audiobooks
+//         WHERE id = ?1
+//         "#,
+//     )
+//     .bind(bookid)
+//     .fetch_one(db)
+//     .await?;
 
-    Ok(row)
-}
+//     Ok(row)
+// }
 
 pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec<FileMetadata>> {
     let rows = sqlx::query!(

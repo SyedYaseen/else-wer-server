@@ -40,27 +40,27 @@ pub async fn get_user_by_username(db: &Pool<Sqlite>, username: &str) -> Result<O
     Ok(user)
 }
 
-pub async fn update_user_password(
-    db: &Pool<Sqlite>,
-    user_id: i64,
-    new_hash: &str,
-    new_salt: &str,
-) -> Result<()> {
-    sqlx::query(
-        r#"
-        UPDATE users
-        SET password_hash = $1, salt = $2
-        WHERE id = $3
-        "#,
-    )
-    .bind(new_hash)
-    .bind(new_salt)
-    .bind(user_id)
-    .execute(db)
-    .await?;
+// pub async fn update_user_password(
+//     db: &Pool<Sqlite>,
+//     user_id: i64,
+//     new_hash: &str,
+//     new_salt: &str,
+// ) -> Result<()> {
+//     sqlx::query(
+//         r#"
+//         UPDATE users
+//         SET password_hash = $1, salt = $2
+//         WHERE id = $3
+//         "#,
+//     )
+//     .bind(new_hash)
+//     .bind(new_salt)
+//     .bind(user_id)
+//     .execute(db)
+//     .await?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 pub async fn admin_exists(db: &Pool<Sqlite>) -> Result<i64> {
     let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_admin = 1")
