@@ -111,32 +111,38 @@ async fn recursive_dirscan(
 pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> {
     let path_owned = path.to_owned();
 
-    let metadata = task::spawn_blocking(move || {
-        let tagged_file = Probe::open(&path_owned)?.read()?;
+    let metadata =
+        task::spawn_blocking(
+            move || match Probe::open(&path_owned).and_then(|p| p.read()) {
+                Result::Ok(tagged_file) => {
+                    let properties = tagged_file.properties();
 
-        let properties = tagged_file.properties();
+                    let duration_ms = properties.duration().as_millis() as i64;
+                    let bitrate = properties.audio_bitrate().map(|b| b as i64);
 
-        let duration_ms = properties.duration().as_millis() as i64;
+                    let file_name = Path::new(&path_owned)
+                        .file_name()
+                        .and_then(|os_str| os_str.to_str())
+                        .unwrap_or_default()
+                        .to_string();
 
-        let bitrate = properties.audio_bitrate().map(|b| b as i64);
-
-        let file_name = Path::new(&path_owned)
-            .file_name()
-            .and_then(|os_str| os_str.to_str())
-            .unwrap_or_default()
-            .to_string();
-
-        Ok(CreateFileMetadata::new(
-            path_owned,
-            None,
-            file_name,
-            Some(duration_ms),
-            None,
-            None,
-            bitrate,
-        ))
-    })
-    .await??;
+                    Ok(CreateFileMetadata::new(
+                        path_owned,
+                        None,
+                        file_name,
+                        Some(duration_ms),
+                        None,
+                        None,
+                        bitrate,
+                    ))
+                }
+                Err(e) => {
+                    eprintln!("{} {}", &path_owned, &e.to_string());
+                    Err(anyhow!("Failed to read metadata for {}: {}", path_owned, e))
+                }
+            },
+        )
+        .await??;
 
     Ok(metadata)
 }
