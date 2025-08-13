@@ -3,7 +3,45 @@ use crate::db::user::admin_exists;
 use crate::models::user::UserDto;
 use anyhow::Result;
 use sqlx::sqlite::SqlitePool;
+use tracing_appender::rolling::{self};
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::{fmt, prelude::*};
+
+pub fn init_logging() {
+    let file_appender = rolling::daily("logs", "app.log");
+    let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
+
+    let console_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let file_filter = EnvFilter::new("info");
+
+    let stdout_layer = fmt::layer()
+        .with_target(false)
+        .with_file(true)
+        .with_thread_ids(true)
+        .with_timer(UtcTime::rfc_3339())
+        .with_line_number(true)
+        .compact()
+        .with_filter(console_filter);
+
+    let file_layer = fmt::layer()
+        .json()
+        .with_target(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_ids(true)
+        .with_writer(non_blocking_file)
+        .with_filter(file_filter);
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(file_layer)
+        .init();
+
+    std::mem::forget(_guard);
+}
 
 pub async fn ensure_admin_user(db: &SqlitePool) -> Result<()> {
     let admin_exists: i64 = admin_exists(db).await?;
@@ -22,17 +60,7 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-pub fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                // Default: info logs for our crate, warn for others
-                .add_directive("my_app=info".parse().unwrap())
-                .add_directive("tower_http=info".parse().unwrap()),
-        )
-        .with_target(false) // Hide module paths if you want cleaner logs
-        .with_file(true) // Show file paths in logs
-        .with_line_number(true)
-        .compact() // Compact mode: shorter logs
-        .init();
+pub async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
+    tracing::warn!("shutdown signal received");
 }

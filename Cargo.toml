@@ -1,5 +1,5 @@
 [package]
-name = "rustybookshelf"
+name = "else-wer"
 version = "0.1.0"
 edition = "2024"
 
@@ -21,6 +21,8 @@ jsonwebtoken = "9.3.1"
 chrono = { version = "0.4.41", features = ["serde"] }
 futures = "0.3.31"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
-tower-http = { version = "0.6.6", features = ["fs", "trace"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "time"] }
+tracing-appender = "0.2.3"
+tower-http = { version = "0.6.6", features = ["fs", "trace", "request-id", "util"] }
 regex = "1.11.1"
+uuid = { version = "1.18.0", features = ["v4", "fast-rng"] }

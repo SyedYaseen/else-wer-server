@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::services::ServeDir;
+use tracing::info;
 mod api_error;
 mod audiobooks;
 mod auth_extractor;
@@ -55,6 +56,8 @@ async fn hello(State(_state): State<AppState>) -> impl IntoResponse {
 
     // let source = std::env::current_dir().unwrap().join(&src_p);
     // let target = curr_dir.clone().join(&dest_p);
+    // info!("IN hello endpoint");
+    // tracing::error!("IN hello endpoint");
 
     Html("<h1>Hello</h1>")
 }
