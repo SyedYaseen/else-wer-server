@@ -7,3 +7,4 @@ rustybookshelf.db-shm
 .env
 plan.md
 covers
+datatest
