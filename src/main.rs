@@ -3,14 +3,15 @@ mod config;
 mod db;
 mod file_ops;
 mod models;
-use std::sync::Arc;
-
+mod utils;
 use crate::config::Config;
 use axum::{Router, extract::State, http::StatusCode};
 use dotenv::dotenv;
 use sqlx::SqlitePool;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utils::ensure_admin_user::ensure_admin_user;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,6 +35,8 @@ async fn main() -> anyhow::Result<()> {
     let db_pool = db::init_db_pool(&config.database_url)
         .await
         .expect("Err connecting to database");
+
+    ensure_admin_user(&db_pool).await.unwrap();
 
     let state = AppState {
         db_pool: db_pool,

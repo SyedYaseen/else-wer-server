@@ -30,6 +30,7 @@
 - Streaming with HTTP range requests
 - Playlist/queue management
 - Optional transcode (with gstreamer or ffmpeg) for low bandwidth
+- Option to organize the books folder based on book/ series/ author data, so the user doesnt have to do it
 
 # Phase 3
 - Include books
@@ -61,3 +62,78 @@ audiobookshelf-rs/
 ├── .env
 ├── Cargo.toml
 └── README.md
+
+
+## Test curl
+curl localhost:3000/api/scan_files
+
+curl -X POST http://localhost:3000/api/update_progress \
+  -H 'content-type: application/json' \
+  -d '{
+    "user_id": 1,
+    "book_id": 5,
+    "file_id": 21,
+    "progress_ms": 119720.00122070312,
+    "complete": false
+  }' -i
+
+
+
+  <!-- 1 5 21 119720.00122070312 false -->
+
+curl localhost:3000/api/file_metadata/1
+
+curl localhost:3000/api/get_progress/1/7/6
+
+
+
+http://192.168.1.3:3000/api/login valerie mypassword
+
+curl localhost:3000/api/covers//app/static/covers/elder_race_[2021].jpg
+
+User
+curl -X POST http://localhost:3000/api/create_user \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo" \
+  -d '{"username": "valerie", "password": "mypassword", "is_admin": false}'
+
+  curl -X POST http://192.168.1.3:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "valerie", "password": "mypassword"}'
+
+
+Admin
+curl -X POST http://localhost:3000/api/create_user \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin", "is_admin": true}'
+
+  curl -X POST http://192.168.1.3:3000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
+
+valerie
+curl -X GET http://localhost:3000/api/hello \
+-H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo"
+
+admin
+curl -X GET http://localhost:3000/api/hello \
+-H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8"
+
+// Wont work because no admin access
+curl -X POST http://localhost:3000/api/create_user \
+-H "Content-Type: application/json" \
+-H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo" \
+-d '{"username": "test1", "password": "mypassword", "is_admin": false}'
+
+
+
+curl -X POST http://localhost:3000/api/create_user \
+-H "Content-Type: application/json" \
+-H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8" \
+-d '{"username": "test1", "password": "mypassword", "is_admin": false}'
+
+
+## Deploy notes
+Static build
+cross build --target armv7-unknown-linux-musleabihf --release &&
+scp target/armv7-unknown-linux-musleabihf/release/rustybookshelf yaseen@192.168.1.12:/home/yaseen/

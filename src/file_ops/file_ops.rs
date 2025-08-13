@@ -1,15 +1,25 @@
-use crate::db::audiobooks::{get_audiobook_id, insert_audiobook, insert_file_metadata};
-use crate::models::models::{AudioBook, CreateFileMetadata};
-use anyhow::Ok;
-
-use lofty::file::{AudioFile, TaggedFileExt};
+use crate::db::audiobooks::{
+    get_audiobook_id, insert_audiobook, insert_file_metadata, update_audiobook_duration,
+};
+use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
+use anyhow::{Ok, anyhow};
+use futures::future;
+use lofty::file::AudioFile;
 use lofty::probe::Probe;
+use regex::Regex;
+use serde::Deserialize;
 use sqlx::SqlitePool;
-use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::result::Result;
-use tokio::fs;
-use tokio::task::spawn_blocking;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
+use tokio::{fs, task};
+
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+#[cfg(windows)]
+use std::os::windows::fs::symlink_file;
+use tokio::process::Command;
 
 async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     let mut entries = fs::read_dir(path).await?;
@@ -21,7 +31,11 @@ async fn has_dirs(path: &PathBuf) -> anyhow::Result<bool> {
     return Ok(false);
 }
 
-async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> anyhow::Result<()> {
+async fn recursive_dirscan(
+    path: &PathBuf,
+    audio_books: &mut Vec<AudioBook>,
+    last_path_component: &str,
+) -> anyhow::Result<()> {
     let mut entries = fs::read_dir(path).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -40,15 +54,29 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
             let mut sub_dir_path = PathBuf::from(path);
             sub_dir_path.push(sub_dir);
 
-            if let Err(e) = Box::pin(recursive_dirscan(&sub_dir_path, audio_books)).await {
+            if let Err(e) = Box::pin(recursive_dirscan(
+                &sub_dir_path,
+                audio_books,
+                last_path_component,
+            ))
+            .await
+            {
                 eprintln!("Err reading folder {e}");
                 continue;
             }
 
-            let v: Vec<_> = sub_dir_path
+            let mut v: Vec<_> = sub_dir_path
                 .components()
                 .map(|c| c.as_os_str().to_str().unwrap_or("").to_string())
                 .collect();
+
+            if sub_dir_path.is_absolute() {
+                if let Some(index) = &v.iter().position(|c| c == last_path_component) {
+                    v.drain(..index);
+                }
+            }
+
+            // println!("{:#?}", v);
 
             let (author, series, title): (String, Option<String>, String) = match v.as_slice() {
                 [_, author, series, title, ..] => (
@@ -58,7 +86,7 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
                 ),
                 [_, author, title, ..] => (author.to_string(), None, title.to_string()),
                 _ => {
-                    println!("Warn: Not a valid path during directory scan");
+                    println!("Warn: Not a valid dir scan path");
                     continue;
                 }
             };
@@ -80,42 +108,90 @@ async fn recursive_dirscan(path: &PathBuf, audio_books: &mut Vec<AudioBook>) -> 
     Ok(())
 }
 
-pub async fn extract_metadata(path: &OsStr) -> anyhow::Result<CreateFileMetadata> {
-    let path = path.to_owned();
-    let metadata = spawn_blocking(async || -> anyhow::Result<CreateFileMetadata> {
-        let tagged_file = Probe::open(&path)?.read()?;
+pub async fn extract_metadata(path: &str) -> anyhow::Result<CreateFileMetadata> {
+    let path_owned = path.to_owned();
 
-        let props = tagged_file.properties();
-        let duration = Some(props.duration().as_secs());
-        let channels = props.channels();
-        let sample_rate = props.sample_rate();
-        let bitrate = props.audio_bitrate();
+    let metadata =
+        task::spawn_blocking(
+            move || match Probe::open(&path_owned).and_then(|p| p.read()) {
+                Result::Ok(tagged_file) => {
+                    let properties = tagged_file.properties();
 
-        // let mut title = None;
-        // let mut artist = None;
-        // let mut album = None;
+                    let duration_ms = properties.duration().as_millis() as i64;
+                    let bitrate = properties.audio_bitrate().map(|b| b as i64);
 
-        // if let Some(tag) = tagged_file.primary_tag() {
-        //     title = tag.get_string(&ItemKey::TrackTitle).map(|s| s.to_string());
-        //     artist = tag
-        //         .get_string(&ItemKey::AlbumArtist)
-        //         .or_else(|| tag.get_string(&ItemKey::TrackArtist))
-        //         .map(|s| s.to_string());
-        //     album = tag.get_string(&ItemKey::AlbumTitle).map(|s| s.to_string());
-        // };
+                    let file_name = Path::new(&path_owned)
+                        .file_name()
+                        .and_then(|os_str| os_str.to_str())
+                        .unwrap_or_default()
+                        .to_string();
 
-        Ok(CreateFileMetadata::new(
-            path,
-            duration.map(|d| d as i64),
-            channels.map(|c| c as i64),
-            sample_rate.map(|sr| sr as i64),
-            bitrate.map(|br| br as i64),
-        ))
-    })
-    .await?;
-    let metadata = metadata.await?;
+                    Ok(CreateFileMetadata::new(
+                        path_owned,
+                        None,
+                        file_name,
+                        Some(duration_ms),
+                        None,
+                        None,
+                        bitrate,
+                    ))
+                }
+                Err(e) => {
+                    eprintln!("{} {}", &path_owned, &e.to_string());
+                    Err(anyhow!("Failed to read metadata for {}: {}", path_owned, e))
+                }
+            },
+        )
+        .await??;
 
     Ok(metadata)
+}
+
+pub async fn create_cover_link(
+    source: &PathBuf,
+    ext: &str,
+    book: &mut AudioBook,
+) -> anyhow::Result<()> {
+    let cover_name = &book.title.replace(' ', "_").to_lowercase().to_owned();
+    let re = Regex::new(r"[^a-z0-9_\-\.]").unwrap();
+    let cover_name = re.replace_all(&cover_name, "");
+
+    let link_name = format!("{}.{}", cover_name, ext);
+    let link_path = std::env::current_dir()?.join("covers").join(&link_name);
+
+    let source_path = std::env::current_dir()?.join(source);
+
+    // println!("Creating symlink: {:?} -> {:?}", link_path, source_path);
+
+    if !source_path.exists() {
+        return Err(anyhow!("Source does not exist: {:?}", source_path));
+    }
+
+    if let Some(parent) = link_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent).await {
+            println!("err creating dir {}", e);
+        };
+    }
+
+    #[cfg(unix)]
+    {
+        if let Err(e) = symlink(source_path, link_path) {
+            eprintln!("Err: {} while creating cover art link {}", e, link_name);
+        };
+    }
+
+    #[cfg(windows)]
+    {
+        // Windows only allows symlink creation with elevated privileges or dev mode
+        if let Err(_) = symlink_file(source_path, target_path) {
+            // fallback to copy
+            fs::copy(source_path, target_path)?;
+        }
+    }
+
+    book.cover_art = Some(format!("/covers/{}", link_name));
+
+    Ok(())
 }
 
 async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
@@ -128,11 +204,11 @@ async fn get_book_files(book: &mut AudioBook) -> anyhow::Result<()> {
             let path = entry.path();
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                 match ext.to_lowercase().as_str() {
-                    "jpg" | "jpeg" | "png" => {
-                        book.cover_art = Some(path.to_string_lossy().into_owned());
+                    "jpg" | "jpeg" | "png" | "webp" => {
+                        create_cover_link(&path, ext, book).await?;
                     }
-                    "mp3" | "m4b" | "flac" => {
-                        book.files.push(path.into_os_string());
+                    "mp3" | "m4b" | "flac" | "m4a" => {
+                        book.files.push(path.to_string_lossy().into_owned());
                     }
                     _ => {}
                 }
@@ -147,7 +223,12 @@ pub async fn scan_for_audiobooks(
     path_str: &str,
     db: &SqlitePool,
 ) -> anyhow::Result<Vec<AudioBook>> {
-    let path = PathBuf::from(path_str);
+    let path: PathBuf = PathBuf::from(path_str);
+    let last_path_component = path
+        .iter()
+        .last()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
 
     if !path.exists() {
         println!("Attempting to create dir {}", path.display());
@@ -161,44 +242,69 @@ pub async fn scan_for_audiobooks(
     }
 
     let mut audio_books: Vec<AudioBook> = Vec::new();
-    let _ = recursive_dirscan(&path, &mut audio_books).await?;
+    let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;
+    // println!("{:#?} {:#?}", audio_books, path);
 
     let mut tasks = vec![];
     for mut book in audio_books {
         let db = db.clone();
         tasks.push(tokio::spawn(async move {
             get_book_files(&mut book).await?;
-            // let bookid = insert_audiobook(&db, &book).await?;
 
             let bookid = match insert_audiobook(&db, &book).await {
                 Result::Ok(id) => id,
                 Err(e) => {
                     let msg = e.to_string();
                     if msg.contains("UNIQUE constraint failed") {
-                        eprintln!("Book exists: {} - {}", book.author, book.title);
+                        eprintln!("{} by {} already exists in db", book.title, book.author);
                         get_audiobook_id(&db, &book).await?
                     } else {
+                        eprintln!(
+                            "Some other err when inserting book {} by {}",
+                            book.author, book.title
+                        );
                         return Err(e.into());
                     }
                 }
             };
 
-            for file in &book.files {
-                let mut metadata = extract_metadata(file).await?;
-                metadata.book_id = bookid;
-                // println!("Metadata {:#?} \n", metadata);
+            let semaphore = Arc::new(Semaphore::new(4));
 
-                match insert_file_metadata(&db, metadata).await {
-                    Result::Ok(_) => (),
-                    Err(_) => {
-                        eprintln!(
-                            "File: {} already mapped to bookid: {}",
-                            file.to_str().unwrap_or_default(),
-                            bookid
-                        );
-                    }
+            let extract_tasks: Vec<_> = book
+                .files
+                .iter()
+                .map(|file| {
+                    let file_path = file.clone();
+                    let permit = semaphore.clone().acquire_owned();
+                    tokio::spawn(async move {
+                        let _permit = permit.await?;
+                        let mut metadata = extract_metadata(&file_path).await?;
+                        metadata.book_id = bookid;
+                        Ok(metadata)
+                    })
+                })
+                .collect();
+
+            let meta_files = future::try_join_all(extract_tasks).await?;
+
+            // let metadata_files = meta_files.into_iter().filter_map(Result::ok);
+            let mut meta_files = meta_files.into_iter().collect::<anyhow::Result<Vec<_>>>()?;
+
+            meta_files.sort_by_key(|m| m.file_path.clone());
+
+            let mut total_duration = 0;
+
+            for (index, f) in meta_files.iter_mut().enumerate() {
+                f.file_id = Some(index as i64 + 1);
+                total_duration += match f.duration {
+                    Some(v) => v,
+                    None => 0,
                 };
+                insert_file_metadata(&db, f).await?
             }
+
+            book.duration = total_duration;
+            update_audiobook_duration(&db, bookid, &book).await?;
             Ok(book)
         }));
     }

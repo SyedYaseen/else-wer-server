@@ -3,6 +3,18 @@ use std::ffi::OsString;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct AudioBookRow {
+    pub id: i64,
+    pub author: String,
+    pub series: Option<String>,
+    pub title: String,
+    pub files_location: String,
+    pub duration: i64,
+    pub cover_art: Option<String>,
+    pub metadata: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AudioBook {
     pub author: String,
@@ -10,8 +22,9 @@ pub struct AudioBook {
     pub title: String,
     pub content_path: String,
     pub cover_art: Option<String>,
+    pub duration: i64,
     pub metadata: Option<String>,
-    pub files: Vec<OsString>,
+    pub files: Vec<String>,
 }
 
 impl AudioBook {
@@ -27,6 +40,7 @@ impl AudioBook {
             title: title,
             content_path: content_path,
             cover_art: None,
+            duration: 0,
             metadata: None,
             files: Vec::new(),
         }
@@ -36,6 +50,8 @@ impl AudioBook {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BaseFileMetadata {
     pub book_id: i64,
+    pub file_id: Option<i64>,
+    pub file_name: String,
     pub file_path: String,
     pub duration: Option<i64>,
     pub channels: Option<i64>,
@@ -52,17 +68,11 @@ pub struct FileMetadata {
 
 pub type CreateFileMetadata = BaseFileMetadata;
 
-#[derive(Debug)]
-pub struct User {
-    pub id: i32,
-    pub username: String,
-    pub password_hash: String,
-    pub salt: String,
-}
-
 impl CreateFileMetadata {
     pub fn new(
-        file_path: OsString,
+        file_path: String,
+        file_id: Option<i64>,
+        file_name: String,
         duration: Option<i64>,
         channels: Option<i64>,
         sample_rate: Option<i64>,
@@ -70,20 +80,13 @@ impl CreateFileMetadata {
     ) -> CreateFileMetadata {
         CreateFileMetadata {
             book_id: -99,
-            file_path: file_path.into_string().unwrap_or_default(),
+            file_id: file_id,
+            file_name: file_name,
+            file_path: file_path,
             duration: duration,
             channels: channels,
             sample_rate: sample_rate,
             bitrate: bitrate,
         }
     }
-}
-
-#[derive(Debug)]
-pub struct Progress {
-    pub id: i32,
-    pub user_id: i32,
-    pub book_id: i32,
-    pub progress_fname: Option<String>,
-    pub progress_time_marker: i32,
 }
