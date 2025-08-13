@@ -11,6 +11,8 @@ use services::startup::ensure_admin_user;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tracing::Level;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,14 +24,6 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     init_tracing();
-
-    // tracing_subscriber::registry()
-    //     .with(
-    //         tracing_subscriber::EnvFilter::try_from_default_env()
-    //             .unwrap_or_else(|_| format!("{}=debug", env!("CARGO_CRATE_NAME")).into()),
-    //     )
-    //     .with(tracing_subscriber::fmt::layer())
-    //     .init();
 
     let config = Arc::new(Config::from_env().unwrap());
     let db_pool = db::init_db_pool(&config.database_url)
@@ -45,7 +39,12 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .nest("/api", api::routes().await)
-        .with_state(state);
+        .with_state(state)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        );
 
     let listener = TcpListener::bind(format!("{}:{}", &config.host, &config.port))
         .await
