@@ -5,7 +5,6 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::services::ServeDir;
-use tracing::info;
 mod api_error;
 mod audiobooks;
 mod auth_extractor;
@@ -20,6 +19,7 @@ use crate::{
         user::{create_user, login},
     },
 };
+use api_error::ApiError;
 use audiobooks::scan_files;
 
 pub async fn routes() -> Router<AppState> {
@@ -58,6 +58,6 @@ async fn hello(State(_state): State<AppState>) -> impl IntoResponse {
     // let target = curr_dir.clone().join(&dest_p);
     // info!("IN hello endpoint");
     // tracing::error!("IN hello endpoint");
-
+    // ApiError::Internal("Soething went".to_string())
     Html("<h1>Hello</h1>")
 }

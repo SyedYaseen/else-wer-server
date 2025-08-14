@@ -12,6 +12,7 @@ use axum::{
     response::IntoResponse,
 };
 use sqlx::{Pool, Sqlite};
+use tracing::error;
 
 use serde_json::json;
 use std::io::Write;
@@ -32,9 +33,7 @@ pub async fn list_books(
         Err(e) => {
             // Log the detailed error for debugging
             tracing::error!("Error scanning files: {}", e);
-            Err(ApiError::InternalServerError(
-                "Failed to scan audiobooks".to_string(),
-            ))
+            Err(ApiError::Internal("Failed to scan audiobooks".to_string()))
         }
     }
 }
@@ -55,9 +54,7 @@ pub async fn scan_files(
         Err(e) => {
             // Log the detailed error for debugging
             tracing::error!("Error scanning files: {}", e);
-            Err(ApiError::InternalServerError(
-                "Failed to scan audiobooks".to_string(),
-            ))
+            Err(ApiError::Internal("Failed to scan audiobooks".to_string()))
         }
     }
 }
@@ -116,19 +113,18 @@ pub async fn file_metadata(
     AuthUser(_claims): AuthUser,
     Path(book_id): Path<i64>,
 ) -> Result<impl IntoResponse, ApiError> {
-    match get_file_metadata(&state.db_pool, book_id).await {
-        Ok(files) => Ok(Json(json!({
-            "message": "",
-            "count": files.len(),
-            "data": files,
-        }))),
-        Err(e) => {
+    let files = get_file_metadata(&state.db_pool, book_id)
+        .await
+        .map_err(|e| {
             tracing::error!("Error scanning files: {}", e);
-            Err(ApiError::InternalServerError(
-                "Failed to scan audiobooks".to_string(),
-            ))
-        }
-    }
+            ApiError::Internal("Failed to scan audiobooks".to_string())
+        })?;
+
+    Ok(Json(json!({
+        "message": "",
+        "count": files.len(),
+        "data": files,
+    })))
 }
 
 async fn get_file_metadata(db: &Pool<Sqlite>, book_id: i64) -> anyhow::Result<Vec<FileMetadata>> {

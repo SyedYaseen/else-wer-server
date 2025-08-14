@@ -3,13 +3,14 @@ use crate::db::user::admin_exists;
 use crate::models::user::UserDto;
 use anyhow::Result;
 use sqlx::sqlite::SqlitePool;
+use tracing::info;
 use tracing_appender::rolling::{self};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::{fmt, prelude::*};
 
 pub fn init_logging() {
-    let file_appender = rolling::daily("logs", "app.log");
+    let file_appender = rolling::daily("logs", "else-wer.log");
     let (non_blocking_file, _guard) = tracing_appender::non_blocking(file_appender);
 
     let console_filter =
@@ -54,7 +55,7 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<()> {
         };
         save_pwd_hash(&admin, db).await?;
 
-        println!("Admin user created: username='admin'");
+        info!("Admin user created: username='admin'");
     }
 
     Ok(())
