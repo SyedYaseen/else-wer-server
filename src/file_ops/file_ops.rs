@@ -2,6 +2,7 @@ use crate::api::api_error::ApiError;
 use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, update_audiobook_duration};
 use crate::models::audiobooks::{AudioBook, BaseFileMetadata, CreateFileMetadata};
 use futures::future::join_all;
+use futures::{StreamExt, stream};
 use lofty::file::AudioFile;
 use lofty::probe::Probe;
 use regex::Regex;
@@ -258,18 +259,17 @@ async fn capture_metadata(
 ) -> Result<(), ApiError> {
     for (book_id, book) in audio_books {
         let db = &db.clone();
-        let mut metas = vec![];
-        let mut tasks: Vec<JoinHandle<Option<BaseFileMetadata>>> = vec![];
 
-        for file in &book.files {
-            let bookid = *book_id;
-            let file = file.clone();
-            tasks.push(tokio::spawn(async move {
-                info!(file);
+        let files = book.files.clone();
+        let book_id = *book_id;
+
+        let mut metas: Vec<BaseFileMetadata> = stream::iter(files)
+            .map(|file| async move {
+                info!("Extracting info on {file}");
 
                 match extract_metadata(&file).await {
                     Ok(mut metadata) => {
-                        metadata.book_id = bookid;
+                        metadata.book_id = book_id;
                         Some(metadata)
                     }
                     Err(_) => {
@@ -277,14 +277,11 @@ async fn capture_metadata(
                         None
                     }
                 }
-            }));
-        }
-
-        for task in tasks {
-            if let Some(meta) = task.await? {
-                metas.push(meta);
-            }
-        }
+            })
+            .buffer_unordered(10)
+            .filter_map(|m| async move { m })
+            .collect()
+            .await;
 
         metas.sort_by_key(|m| m.file_name.clone());
 
