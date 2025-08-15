@@ -2,10 +2,9 @@ use crate::{
     api::api_error::ApiError,
     models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata},
 };
-use anyhow::Result;
 use sqlx::{Pool, Sqlite};
 
-pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
+pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiError> {
     let books = sqlx::query_as::<_, AudioBookRow>(
         r#"
         SELECT id, author, series, title, files_location, cover_art, duration, metadata
@@ -87,7 +86,7 @@ pub async fn insert_file_metadata(
     Ok(())
 }
 
-pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64> {
+pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, ApiError> {
     let row: (i64,) = sqlx::query_as(
         r#"
         SELECT id
@@ -118,7 +117,10 @@ pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
 //     Ok(row)
 // }
 
-pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec<FileMetadata>> {
+pub async fn get_files_by_book_id(
+    db: &Pool<Sqlite>,
+    book_id: i64,
+) -> Result<Vec<FileMetadata>, ApiError> {
     let rows = sqlx::query!(
         r#"
         SELECT

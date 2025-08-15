@@ -1,7 +1,6 @@
 use crate::api::api_error::ApiError;
 use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, update_audiobook_duration};
-use crate::models::audiobooks::{AudioBook, BaseFileMetadata, CreateFileMetadata};
-use futures::future::join_all;
+use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use futures::{StreamExt, stream};
 use lofty::file::AudioFile;
 use lofty::probe::Probe;
@@ -126,12 +125,17 @@ pub async fn create_cover_link(
     }
 
     if let Some(parent) = link_path.parent() {
-        fs::create_dir_all(parent).await?;
+        let _ = fs::create_dir_all(parent).await.map_err(|e| {
+            tracing::error!("Err creating dir {}", parent.display());
+            e
+        });
     }
 
     #[cfg(unix)]
     {
-        symlink(source_path, link_path)?;
+        let _ = symlink(source_path, link_path).map_err(|e| {
+            tracing::error!("Failed cover art symlink {}. {}", link_name, e.to_string());
+        });
     }
 
     #[cfg(windows)]
@@ -139,7 +143,9 @@ pub async fn create_cover_link(
         // Windows only allows symlink creation with elevated privileges or dev mode
         if let Err(_) = symlink_file(source_path, target_path) {
             // fallback to copy
-            fs::copy(source_path, target_path)?;
+            fs::copy(source_path, target_path).map_err(|e| {
+                tracing::error!("Failed to copy cover art {}. {}", link_name, e.to_string());
+            });
         }
     }
 
@@ -159,7 +165,6 @@ async fn get_book_files_link_covers(book: &mut AudioBook) -> Result<(), ApiError
 
         let path = entry.path();
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            info!("{}: {}", ext, path.display());
             match ext.to_lowercase().as_str() {
                 "jpg" | "jpeg" | "png" | "webp" => {
                     create_cover_link(&path, ext, book).await?;
@@ -184,10 +189,11 @@ async fn capture_files_cover_paths(
     let mut insert_tasks: Vec<JoinHandle<Result<(i64, AudioBook), ApiError>>> = vec![];
 
     for mut book in audio_books {
+        info!("==== Before extracting, {}", book.title);
         let db = db.clone();
         insert_tasks.push(tokio::spawn(async move {
             if let Err(e) = get_book_files_link_covers(&mut book).await {
-                tracing::error!("{}", e.to_string());
+                tracing::error!("{} {}", book.title, e.to_string());
             }
             let book_id = insert_audiobook(&db, &book).await?;
 
@@ -240,7 +246,11 @@ pub async fn extract_metadata(path: &str) -> Result<CreateFileMetadata, ApiError
             ))
         }
         Err(e) => {
-            tracing::error!("Error getting metadata {} {}", &path_owned, &e.to_string());
+            tracing::error!(
+                "Lofty failed to parse metadata {} {}",
+                &path_owned,
+                &e.to_string()
+            );
 
             Err(ApiError::Internal(format!(
                 "Failed to read metadata for {}: {}",
@@ -334,7 +344,6 @@ pub async fn scan_for_audiobooks(
 
     let mut audio_books: Vec<AudioBook> = Vec::new();
     let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;
-
     let inserted_books = capture_files_cover_paths(audio_books, &db).await;
 
     capture_metadata(inserted_books, &db).await?;

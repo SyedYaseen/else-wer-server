@@ -6,6 +6,7 @@ mod models;
 mod services;
 use crate::{
     config::Config,
+    db::cleanup,
     services::startup::{init_logging, shutdown_signal},
 };
 use axum::{
@@ -39,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         .expect("Err connecting to database");
 
     ensure_admin_user(&db_pool).await.unwrap();
-
+    let _ = cleanup(&db_pool).await;
     let state = AppState {
         db_pool: db_pool,
         config: Arc::clone(&config),

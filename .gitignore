@@ -7,5 +7,6 @@ rustybookshelf.db-shm
 .env
 plan.md
 covers
+backupdata
 datatest
 /logs
