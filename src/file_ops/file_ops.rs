@@ -1,6 +1,7 @@
 use crate::api::api_error::ApiError;
 use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, update_audiobook_duration};
-use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
+use crate::models::audiobooks::{AudioBook, BaseFileMetadata, CreateFileMetadata};
+use futures::future::join_all;
 use lofty::file::AudioFile;
 use lofty::probe::Probe;
 use regex::Regex;
@@ -148,7 +149,7 @@ pub async fn create_cover_link(
 
 async fn get_book_files_link_covers(book: &mut AudioBook) -> Result<(), ApiError> {
     let mut entries = fs::read_dir(&book.content_path).await?;
-
+    // TODO debug here for missing files
     while let Some(entry) = entries.next_entry().await? {
         let f_type = entry.file_type().await?;
         if !f_type.is_file() {
@@ -214,7 +215,6 @@ async fn capture_files_cover_paths(
 
 pub async fn extract_metadata(path: &str) -> Result<CreateFileMetadata, ApiError> {
     let path_owned = path.to_owned();
-    info!("Met for {}", path_owned);
     let metadata = match Probe::open(&path_owned).and_then(|p| p.read()) {
         Ok(tagged_file) => {
             let properties = tagged_file.properties();
@@ -257,21 +257,33 @@ async fn capture_metadata(
     db: &SqlitePool,
 ) -> Result<(), ApiError> {
     for (book_id, book) in audio_books {
-        let mut metas = vec![];
         let db = &db.clone();
+        let mut metas = vec![];
+        let mut tasks: Vec<JoinHandle<Option<BaseFileMetadata>>> = vec![];
 
         for file in &book.files {
-            info!(file);
-            let mut metadata = match extract_metadata(&file).await {
-                Ok(val) => val,
-                Err(_) => {
-                    tracing::error!("Error getting metadata for {}", file);
-                    continue;
-                }
-            };
+            let bookid = *book_id;
+            let file = file.clone();
+            tasks.push(tokio::spawn(async move {
+                info!(file);
 
-            metadata.book_id = book_id.to_owned();
-            metas.push(metadata);
+                match extract_metadata(&file).await {
+                    Ok(mut metadata) => {
+                        metadata.book_id = bookid;
+                        Some(metadata)
+                    }
+                    Err(_) => {
+                        tracing::error!("Error getting metadata for {}", file);
+                        None
+                    }
+                }
+            }));
+        }
+
+        for task in tasks {
+            if let Some(meta) = task.await? {
+                metas.push(meta);
+            }
         }
 
         metas.sort_by_key(|m| m.file_name.clone());
@@ -324,57 +336,9 @@ pub async fn scan_for_audiobooks(
 
     capture_metadata(&mut inserted_books, &db).await?;
 
-    // for mut book in audio_books {
-    //     let db = db.clone();
-
-    //         let semaphore = Arc::new(Semaphore::new(4));
-
-    //         let extract_tasks: Vec<_> = book
-    //             .files
-    //             .iter()
-    //             .map(|file| {
-    //                 let file_path = file.clone();
-    //                 let permit = semaphore.clone().acquire_owned();
-    //                 tokio::spawn(async move {
-    //                     let _permit = permit.await?;
-    //                     let mut metadata = extract_metadata(&file_path).await?;
-    //                     metadata.book_id = bookid;
-    //                     Ok(metadata)
-    //                 })
-    //             })
-    //             .collect();
-
-    //         let meta_files = future::try_join_all(extract_tasks).await?;
-
-    //         // let metadata_files = meta_files.into_iter().filter_map(Result::ok);
-    //         let mut meta_files = meta_files.into_iter().collect::<anyhow::Result<Vec<_>>>()?;
-
-    //         meta_files.sort_by_key(|m| m.file_path.clone());
-
-    //         let mut total_duration = 0;
-
-    //         for (index, f) in meta_files.iter_mut().enumerate() {
-    //             f.file_id = Some(index as i64 + 1);
-    //             total_duration += match f.duration {
-    //                 Some(v) => v,
-    //                 None => 0,
-    //             };
-    //             insert_file_metadata(&db, f).await?
-    //         }
-
-    //         book.duration = total_duration;
-    //         update_audiobook_duration(&db, bookid, &book).await?;
-    //         Ok(book)
-    //     }));
-    // }
-
-    // let mut processed_books = Vec::new();
-    // for task in tasks {
-    //     processed_books.push(task.await??);
-    // }
-    // let mut audio_books: Vec<AudioBook> = Vec::new();
+    let audio_books: Vec<AudioBook> = Vec::new();
     // let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;
     // let dummy_out = capture_files_cover_paths(audio_books, &db).await;
-    let processed_books = inserted_books.into_iter().map(|b| b.1).collect();
-    Ok(processed_books)
+    // let processed_books = inserted_books.into_iter().map(|b| b.1).collect();
+    Ok(audio_books)
 }
