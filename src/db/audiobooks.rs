@@ -1,4 +1,7 @@
-use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata};
+use crate::{
+    api::api_error::ApiError,
+    models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata},
+};
 use anyhow::{Context, Error, Result};
 use sqlx::{Pool, Sqlite};
 
@@ -16,7 +19,7 @@ pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
     Ok(books)
 }
 
-pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, Error> {
+pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, ApiError> {
     let id = sqlx::query_scalar!(
         r#"
         INSERT INTO audiobooks 
@@ -42,7 +45,7 @@ pub async fn update_audiobook_duration(
     db: &Pool<Sqlite>,
     bookid: i64,
     book: &AudioBook,
-) -> Result<(), Error> {
+) -> Result<(), ApiError> {
     sqlx::query!(
         r#"
         UPDATE audiobooks
@@ -61,9 +64,9 @@ pub async fn update_audiobook_duration(
 pub async fn insert_file_metadata(
     db: &Pool<Sqlite>,
     create_data: &mut CreateFileMetadata,
-) -> anyhow::Result<()> {
+) -> Result<(), ApiError> {
     // let file_path = create_data.file_path.to_string().to_owned();
-    match 
+
     sqlx::query!(
         r#"
         INSERT INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
@@ -79,16 +82,9 @@ pub async fn insert_file_metadata(
         create_data.bitrate
     )
     .execute(db)
-    .await
-    .with_context(|| format!("Err adding files for {}", create_data.file_name)) {
-        Err(_) => {
-            // eprint!("{}" , e);
-            Ok(())
-        },
-        _ => Ok(())
-    }
+    .await?;
 
-    // Ok(())
+    Ok(())
 }
 
 pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64> {

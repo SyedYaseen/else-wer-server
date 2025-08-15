@@ -6,7 +6,6 @@ use crate::{
     AppState,
     models::user::{LoginDto, UserDto},
 };
-use anyhow::Result;
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
@@ -22,30 +21,23 @@ pub async fn create_user(
     AdminUser(_claims): AdminUser,
     State(state): State<AppState>,
     Json(payload): Json<UserDto>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
 
     if payload.username.is_empty() || payload.password.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Provide both username and password" })),
-        );
+        return Err(ApiError::BadRequest(
+            "Provide both username and password".into(),
+        ));
     }
 
-    match save_pwd_hash(&payload, db).await {
-        Result::Ok(user) => {
-            let message = format!("User {} created successfully", user.username);
-
-            (StatusCode::CREATED, Json(json!({ "message": message })))
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": format!("Auth failed: {}", e) })),
-        ),
-    }
+    let user = save_pwd_hash(&payload, db).await?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "message": format!("User {} created successfully", user.username) })),
+    ))
 }
 
-pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User> {
+pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, ApiError> {
     let argon2 = Argon2::default();
     let password_bytes = &user.password.clone().into_bytes();
 

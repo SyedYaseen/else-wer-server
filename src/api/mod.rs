@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::services::ServeDir;
-mod api_error;
+pub mod api_error;
 mod audiobooks;
 mod auth_extractor;
 mod middleware;
@@ -19,7 +19,7 @@ use crate::{
         user::{create_user, login},
     },
 };
-use api_error::ApiError;
+
 use audiobooks::scan_files;
 
 pub async fn routes() -> Router<AppState> {

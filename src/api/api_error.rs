@@ -5,6 +5,7 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Error, Debug)]
 pub enum ApiError {
@@ -25,6 +26,15 @@ pub enum ApiError {
 
     #[error("Password hash error")]
     PasswordErr(#[from] argon2::password_hash::Error),
+
+    #[error("Custom IO error: {0}")]
+    IOErrCustom(String),
+
+    #[error("IO error: {0}")]
+    IOErr(#[from] std::io::Error),
+
+    #[error("Join error: {0}")]
+    JoinErr(#[from] JoinError),
 }
 
 impl IntoResponse for ApiError {
@@ -46,6 +56,15 @@ impl IntoResponse for ApiError {
             ApiError::PasswordErr(_) => {
                 (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
             }
+            ApiError::IOErr(_e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Something went wrong when accessing your file system".to_string(),
+            ),
+            ApiError::IOErrCustom(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            ApiError::JoinErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while combining threads".to_string(),
+            ),
         };
 
         let body = Json(json!({

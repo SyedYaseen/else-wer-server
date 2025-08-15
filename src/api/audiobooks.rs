@@ -3,7 +3,6 @@ use crate::db::audiobooks::{get_files_by_book_id, list_all_books};
 use crate::file_ops::file_ops;
 use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
-use Result::Ok;
 use axum::body::Body;
 use axum::{
     Json,
@@ -12,7 +11,6 @@ use axum::{
     response::IntoResponse,
 };
 use sqlx::{Pool, Sqlite};
-use tracing::error;
 
 use serde_json::json;
 use std::io::Write;
@@ -45,18 +43,15 @@ pub async fn scan_files(
     let path = &state.config.book_files;
     let db = &state.db_pool;
 
-    match file_ops::scan_for_audiobooks(path, db).await {
-        Ok(books) => Ok(Json(json!({
+    let books = file_ops::scan_for_audiobooks(path, db).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
             "message": "Scan completed successfully",
             "books_processed": books.len(),
             "books": books,
-        }))),
-        Err(e) => {
-            // Log the detailed error for debugging
-            tracing::error!("Error scanning files: {}", e);
-            Err(ApiError::Internal("Failed to scan audiobooks".to_string()))
-        }
-    }
+        })),
+    ))
 }
 
 pub async fn download_book(
