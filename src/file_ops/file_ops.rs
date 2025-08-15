@@ -254,52 +254,58 @@ pub async fn extract_metadata(path: &str) -> Result<CreateFileMetadata, ApiError
 }
 
 async fn capture_metadata(
-    audio_books: &mut Vec<(i64, AudioBook)>,
+    audio_books: Vec<(i64, AudioBook)>,
     db: &SqlitePool,
 ) -> Result<(), ApiError> {
-    for (book_id, book) in audio_books {
-        let db = &db.clone();
+    stream::iter(audio_books)
+        .map(|(book_id, book)| async move {
+            let files = book.files.clone();
 
-        let files = book.files.clone();
-        let book_id = *book_id;
+            let mut metadata: Vec<CreateFileMetadata> = stream::iter(files)
+                .map(|file| async move {
+                    info!("Extracting info on {file}");
 
-        let mut metas: Vec<BaseFileMetadata> = stream::iter(files)
-            .map(|file| async move {
-                info!("Extracting info on {file}");
-
-                match extract_metadata(&file).await {
-                    Ok(mut metadata) => {
-                        metadata.book_id = book_id;
-                        Some(metadata)
+                    match extract_metadata(&file).await {
+                        Ok(mut metadata) => {
+                            metadata.book_id = book_id;
+                            Some(metadata)
+                        }
+                        Err(_) => {
+                            tracing::error!("Error getting metadata for {}", file);
+                            None
+                        }
                     }
-                    Err(_) => {
-                        tracing::error!("Error getting metadata for {}", file);
-                        None
-                    }
-                }
-            })
-            .buffer_unordered(10)
-            .filter_map(|m| async move { m })
-            .collect()
-            .await;
+                })
+                .buffer_unordered(5)
+                .filter_map(|m| async move { m })
+                .collect()
+                .await;
 
-        metas.sort_by_key(|m| m.file_name.clone());
+            metadata.sort_by_key(|m| m.file_name.clone());
+            let mut total_duration = 0;
 
-        let mut total_duration = 0;
+            for (index, f) in metadata.iter_mut().enumerate() {
+                f.file_id = Some(index as i64 + 1);
+                total_duration += f.duration.unwrap_or(0);
+                insert_file_metadata(&db, f)
+                    .await
+                    .inspect_err(|e| {
+                        tracing::error!("Err inserting {} metadata, Err: {}", f.file_name, e)
+                    })
+                    .ok();
+            }
 
-        for (index, f) in metas.iter_mut().enumerate() {
-            f.file_id = Some(index as i64 + 1);
-            total_duration += f.duration.unwrap_or(0);
-            insert_file_metadata(&db, f).await?;
-        }
+            update_audiobook_duration(&db, book_id.to_owned(), total_duration)
+                .await
+                .inspect_err(|e| tracing::error!("Err updating duration {}. {}", book.title, e))
+                .ok();
 
-        book.duration = total_duration;
+            metadata
+        })
+        .buffer_unordered(2)
+        .collect::<Vec<_>>()
+        .await;
 
-        if let Err(e) = update_audiobook_duration(&db, book_id.to_owned(), &book).await {
-            tracing::error!("Err updating duration {}", e.to_string());
-            continue;
-        };
-    }
     Ok(())
 }
 
@@ -329,9 +335,9 @@ pub async fn scan_for_audiobooks(
     let mut audio_books: Vec<AudioBook> = Vec::new();
     let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;
 
-    let mut inserted_books = capture_files_cover_paths(audio_books, &db).await;
+    let inserted_books = capture_files_cover_paths(audio_books, &db).await;
 
-    capture_metadata(&mut inserted_books, &db).await?;
+    capture_metadata(inserted_books, &db).await?;
 
     let audio_books: Vec<AudioBook> = Vec::new();
     // let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;

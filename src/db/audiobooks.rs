@@ -2,7 +2,7 @@ use crate::{
     api::api_error::ApiError,
     models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata},
 };
-use anyhow::{Context, Error, Result};
+use anyhow::Result;
 use sqlx::{Pool, Sqlite};
 
 pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
@@ -44,7 +44,7 @@ pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
 pub async fn update_audiobook_duration(
     db: &Pool<Sqlite>,
     bookid: i64,
-    book: &AudioBook,
+    duration: i64,
 ) -> Result<(), ApiError> {
     sqlx::query!(
         r#"
@@ -52,7 +52,7 @@ pub async fn update_audiobook_duration(
         SET duration = ?1
         WHERE id = ?2
         "#,
-        book.duration,
+        duration,
         bookid
     )
     .execute(db)
