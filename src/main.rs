@@ -7,7 +7,8 @@ mod services;
 use crate::{
     config::Config,
     db::cleanup,
-    services::startup::{init_logging, shutdown_signal},
+    file_ops::file_ops::scan_for_audiobooks,
+    services::startup::{init_logging, scan_files_startup, shutdown_signal},
 };
 use axum::{
     Router,
@@ -39,8 +40,10 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Err connecting to database");
 
+    // let _ = cleanup(&db_pool).await;
     ensure_admin_user(&db_pool).await.unwrap();
-    let _ = cleanup(&db_pool).await;
+    let _ = scan_files_startup(&config.book_files, &db_pool).await;
+
     let state = AppState {
         db_pool: db_pool,
         config: Arc::clone(&config),

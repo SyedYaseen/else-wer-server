@@ -1,6 +1,8 @@
 use crate::api::api_error::ApiError;
-use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, update_audiobook_duration};
-use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
+use crate::db::audiobooks::{
+    insert_audiobook, insert_file_metadata, list_all_books, update_audiobook_duration,
+};
+use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata};
 use futures::{StreamExt, stream};
 
 use lofty::file::FileType;
@@ -328,7 +330,7 @@ async fn capture_metadata(
 pub async fn scan_for_audiobooks(
     path_str: &str,
     db: &SqlitePool,
-) -> Result<Vec<AudioBook>, ApiError> {
+) -> Result<Vec<AudioBookRow>, ApiError> {
     let path: PathBuf = PathBuf::from(path_str);
 
     if !path.exists() {
@@ -354,9 +356,7 @@ pub async fn scan_for_audiobooks(
 
     capture_metadata(inserted_books, &db).await?;
 
-    let audio_books: Vec<AudioBook> = Vec::new();
-    // let _ = recursive_dirscan(&path, &mut audio_books, last_path_component).await?;
-    // let dummy_out = capture_files_cover_paths(audio_books, &db).await;
-    // let processed_books = inserted_books.into_iter().map(|b| b.1).collect();
+    let audio_books = list_all_books(db).await?;
+
     Ok(audio_books)
 }

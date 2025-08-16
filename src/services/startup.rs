@@ -1,7 +1,9 @@
+use crate::api::api_error::ApiError;
 use crate::api::user::save_pwd_hash;
 use crate::db::user::admin_exists;
+use crate::file_ops::file_ops::scan_for_audiobooks;
 use crate::models::user::UserDto;
-use anyhow::Result;
+use axum::extract::path;
 use sqlx::sqlite::SqlitePool;
 use tracing::info;
 use tracing_appender::rolling::{self};
@@ -44,7 +46,7 @@ pub fn init_logging() {
     std::mem::forget(_guard);
 }
 
-pub async fn ensure_admin_user(db: &SqlitePool) -> Result<()> {
+pub async fn ensure_admin_user(db: &SqlitePool) -> Result<(), ApiError> {
     let admin_exists: i64 = admin_exists(db).await?;
 
     if admin_exists == 0 {
@@ -58,6 +60,13 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<()> {
         info!("Admin user created: username='admin'");
     }
 
+    Ok(())
+}
+
+pub async fn scan_files_startup(path_str: &String, db: &SqlitePool) -> Result<(), ApiError> {
+    info!("Scanning files on {}", path_str);
+    scan_for_audiobooks(path_str, db).await?;
+    info!("Completed audiobooks file scan");
     Ok(())
 }
 
