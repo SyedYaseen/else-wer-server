@@ -161,3 +161,20 @@ pub async fn get_files_by_book_id(
 
     Ok(files)
 }
+
+pub async fn get_file_path(db: &Pool<Sqlite>, file_id: i64) -> Result<String, ApiError> {
+    let path: (String,) = sqlx::query_as(
+        r#"
+        SELECT
+            file_path
+        FROM files
+        WHERE id = ?
+        ORDER BY id
+        "#,
+    )
+    .bind(file_id)
+    .fetch_one(db)
+    .await?;
+
+    Ok(path.0)
+}

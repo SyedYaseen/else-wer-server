@@ -14,7 +14,7 @@ pub mod user;
 use crate::{
     AppState,
     api::{
-        audiobooks::{download_book, file_metadata, list_books},
+        audiobooks::{download_book, download_chunk, file_metadata, list_books},
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
@@ -31,6 +31,7 @@ pub async fn routes() -> Router<AppState> {
         .route("/list_books", get(list_books))
         // Files
         .route("/download_book/{book_id}", get(download_book))
+        .route("/download_chunk/{file_id}", get(download_chunk))
         .route("/file_metadata/{book_id}", get(file_metadata))
         // Sync
         .route(

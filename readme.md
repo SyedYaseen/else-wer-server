@@ -36,32 +36,6 @@
 - Include books
 - Ability to sync progress between audio and epub
 
-Folder structure init:
-audiobookshelf-rs/
-├── src/
-│   ├── main.rs
-│   ├── config.rs
-│   ├── lib.rs
-│   ├── api/
-│   │   ├── mod.rs
-│   │   ├── audiobooks.rs
-│   │   └── sync.rs
-│   ├── services/
-│   │   ├── mod.rs
-│   │   ├── scanner.rs
-│   │   └── sync.rs
-│   ├── models/
-│   │   ├── mod.rs
-│   │   ├── audiobook.rs
-│   │   └── progress.rs
-│   ├── storage/
-│   │   ├── mod.rs
-│   │   ├── database.rs     # SQLite or sled wrapper
-│   │   └── fs.rs           # File-related helpers
-│   └── utils.rs
-├── .env
-├── Cargo.toml
-└── README.md
 
 
 ## Test curl

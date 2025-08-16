@@ -1,19 +1,27 @@
 use crate::api::auth_extractor::AuthUser;
-use crate::db::audiobooks::{get_files_by_book_id, list_all_books};
+use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
 use crate::file_ops::file_ops;
 use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
-use axum::body::Body;
+use axum::http::HeaderMap;
 use axum::{
     Json,
+    body::Body,
     extract::{Path, State},
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
+
+use base64::engine::general_purpose;
+
+use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 
 use serde_json::json;
 use std::io::Write;
+use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
 
@@ -101,6 +109,70 @@ pub async fn download_book(
         .header(header::CONTENT_DISPOSITION, disposition_value)
         .body(Body::from(buffer))
         .unwrap()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChunkParams {
+    pub index: i64,
+    pub size: i64,
+}
+pub async fn download_chunk(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+    Path(file_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, ApiError> {
+    let file_path = get_file_path(&state.db_pool, file_id).await?;
+    tracing::info!("Download init {file_path}");
+    if !PathBuf::new().join(file_path.clone()).exists() {
+        return Err(ApiError::BadRequest("File not found".into()));
+    }
+
+    let mut file = File::open(&file_path).await.unwrap();
+    let file_size = file.metadata().await.unwrap().len();
+
+    // parse Range header manually
+    let (start, end) = if let Some(range) = headers.get("range") {
+        let range_str = range.to_str().unwrap_or("");
+
+        // Expecting "bytes=start-end"
+        if let Some(range_vals) = range_str.strip_prefix("bytes=") {
+            let mut parts = range_vals.split('-');
+            let start: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+            let end: u64 = parts
+                .next()
+                .unwrap_or(&(file_size - 1).to_string())
+                .parse()
+                .unwrap_or(file_size - 1);
+            (start, end)
+        } else {
+            (0, file_size - 1)
+        }
+    } else {
+        (0, file_size - 1)
+    };
+
+    let chunk_size = end - start + 1;
+    file.seek(SeekFrom::Start(start))
+        .await
+        .map_err(|_| ApiError::Internal("Failed to seek in file".to_string()))?;
+    let mut buffer = vec![0; chunk_size as usize];
+
+    file.read_exact(&mut buffer)
+        .await
+        .map_err(|_| ApiError::Internal("Failed to read file".to_string()))?;
+
+    let content_range = format!("bytes {}-{}/{}", start, end, file_size);
+
+    Ok((
+        StatusCode::PARTIAL_CONTENT,
+        [
+            ("Content-Type", "audio/mpeg".to_owned()),
+            ("Content-Length", chunk_size.to_string()),
+            ("Content-Range", content_range.to_owned()),
+        ],
+        buffer.to_owned(),
+    ))
 }
 
 pub async fn file_metadata(
