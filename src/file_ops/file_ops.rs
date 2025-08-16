@@ -2,12 +2,19 @@ use crate::api::api_error::ApiError;
 use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, update_audiobook_duration};
 use crate::models::audiobooks::{AudioBook, CreateFileMetadata};
 use futures::{StreamExt, stream};
-use lofty::file::AudioFile;
-use lofty::probe::Probe;
+
+use lofty::file::FileType;
+use lofty::properties;
+use lofty::{
+    config::{ParseOptions, ParsingMode},
+    file::AudioFile,
+    probe::Probe,
+};
 use regex::Regex;
 use sqlx::{Pool, Sqlite, SqlitePool};
 use std::path::{Path, PathBuf};
 use std::result::Result;
+use symphonia::core::meta;
 use tokio::{fs, task::JoinHandle};
 use tracing::{info, warn};
 
@@ -78,7 +85,7 @@ async fn recursive_dirscan(
             ),
             [_, author, title, ..] => (author.to_string(), None, title.to_string()),
             _ => {
-                info!("Not a valid dir scan path");
+                info!("Skipping invalid path");
                 continue;
             }
         };
@@ -221,44 +228,43 @@ async fn capture_files_cover_paths(
 }
 
 pub async fn extract_metadata(path: &str) -> Result<CreateFileMetadata, ApiError> {
-    let path_owned = path.to_owned();
-    let metadata = match Probe::open(&path_owned).and_then(|p| p.read()) {
-        Ok(tagged_file) => {
-            let properties = tagged_file.properties();
+    let path_owned = path.trim().to_owned();
 
-            let duration_ms = properties.duration().as_millis() as i64;
-            let bitrate = properties.audio_bitrate().map(|b| b as i64);
+    let file_name = Path::new(&path_owned)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
 
-            let file_name = Path::new(&path_owned)
-                .file_name()
-                .and_then(|os_str| os_str.to_str())
-                .unwrap_or_default()
-                .to_string();
+    let mut metadata =
+        CreateFileMetadata::new(path_owned.clone(), None, file_name, None, None, None, None);
 
-            Ok(CreateFileMetadata::new(
-                path_owned,
-                None,
-                file_name,
-                Some(duration_ms),
-                None,
-                None,
-                bitrate,
-            ))
+    let probe = Probe::open(&path_owned).inspect_err(|e| {
+        tracing::error!(
+            "Failed to create metadata probe {path_owned} {}",
+            e.to_string()
+        );
+    });
+
+    if let Ok(probe) = probe {
+        let probe = probe.options(ParseOptions::new().parsing_mode(ParsingMode::Relaxed));
+
+        if let Ok(probe) = probe.guess_file_type() {
+            match probe.read() {
+                Ok(tagged_file) => {
+                    let properties = tagged_file.properties();
+                    metadata.duration = Some(properties.duration().as_millis() as i64);
+                    metadata.bitrate = properties.audio_bitrate().map(|b| b as i64);
+                }
+                Err(e) => {
+                    tracing::error!("Failed reading tagged file: {}", e);
+                    return Err(ApiError::Internal("Failed reading tagged file".into()));
+                }
+            };
+        } else {
+            tracing::error!("Failed to guess file type {}", path_owned);
         }
-        Err(e) => {
-            tracing::error!(
-                "Lofty failed to parse metadata {} {}",
-                &path_owned,
-                &e.to_string()
-            );
-
-            Err(ApiError::Internal(format!(
-                "Failed to read metadata for {}: {}",
-                path_owned,
-                e.to_string(),
-            )))
-        }
-    }?;
+    }
 
     Ok(metadata)
 }
@@ -273,7 +279,7 @@ async fn capture_metadata(
 
             let mut metadata: Vec<CreateFileMetadata> = stream::iter(files)
                 .map(|file| async move {
-                    info!("Extracting info on {file}");
+                    info!("Meta Extract {file}");
 
                     match extract_metadata(&file).await {
                         Ok(mut metadata) => {
