@@ -2,6 +2,7 @@ use crate::api::api_error::ApiError;
 use crate::api::user::save_pwd_hash;
 use crate::db::user::admin_exists;
 use crate::file_ops::file_ops::scan_for_audiobooks;
+use crate::file_ops::scan_files::scan_files;
 use crate::models::user::UserDto;
 use axum::extract::path;
 use sqlx::sqlite::SqlitePool;
@@ -65,7 +66,8 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<(), ApiError> {
 
 pub async fn scan_files_startup(path_str: &String, db: &SqlitePool) -> Result<(), ApiError> {
     info!("Scanning files on {}", path_str);
-    scan_for_audiobooks(path_str, db).await?;
+    // scan_for_audiobooks(path_str, db).await?;
+    scan_files(path_str, db).await?;
     info!("Completed audiobooks file scan");
     Ok(())
 }

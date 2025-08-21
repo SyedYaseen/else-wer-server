@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use lofty::error::LoftyError;
 use serde_json::json;
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -35,6 +36,12 @@ pub enum ApiError {
 
     #[error("Join error: {0}")]
     JoinErr(#[from] JoinError),
+
+    #[error("Walkdir error: {0}")]
+    WalkDirErr(#[from] walkdir::Error),
+
+    #[error("Lofty error: {0}")]
+    LoftyErr(#[from] LoftyError),
 }
 
 impl IntoResponse for ApiError {
@@ -64,6 +71,14 @@ impl IntoResponse for ApiError {
             ApiError::JoinErr(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Err while combining threads".to_string(),
+            ),
+            ApiError::WalkDirErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while reading files".to_string(),
+            ),
+            ApiError::LoftyErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while reading files".to_string(),
             ),
         };
 
