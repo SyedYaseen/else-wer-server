@@ -1,9 +1,10 @@
-use std::path::Path;
+use std::{fs::File, io::BufReader};
 use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
-    file_ops::{utils::create_cover_link, word_cleanup::clean_metadata},
+    db::meta_scan::save_meta,
+    file_ops::{meta_cleanup::meta_cleanup, utils::create_cover_link},
     models::fs_models::FileScanCache,
 };
 
@@ -61,7 +62,53 @@ fn get_mime_type(file_type: &Option<FileType>) -> Option<String> {
     }
 }
 
-pub async fn extract_metadata(path: &Path, metadata: &mut FileScanCache) -> Result<(), ApiError> {
+async fn extract_tag(
+    probe: Probe<BufReader<File>>,
+    metadata: &mut FileScanCache,
+) -> Result<(), ApiError> {
+    match probe.read() {
+        Ok(tagged_file) => {
+            if let Some(tag) = extract_besttag(tagged_file.tags()).await {
+                if let Some(title) = tag.title() {
+                    metadata.title = Some(title.trim().to_string());
+                }
+
+                if let Some(artist) = tag.artist() {
+                    metadata.author = Some(artist.trim().to_string());
+                }
+
+                if let Some(album) = tag.album() {
+                    metadata.series = Some(album.trim().to_string());
+                }
+
+                if let Some(track) = tag.track() {
+                    metadata.track_number = Some(track as i64);
+                }
+
+                if let Some(year) = tag.year() {
+                    metadata.pub_year = Some(year as i64);
+                    // println!("pub year {}", year);
+                }
+
+                // if let Some(track_total) = tag.track_total() {
+                //     println!("track total {}", track_total);
+                // }
+            }
+
+            let properties = tagged_file.properties();
+
+            metadata.duration = properties.duration().as_millis() as i64;
+            metadata.bitrate = properties.audio_bitrate().map(|b| b as i64);
+        }
+        Err(e) => {
+            tracing::error!("Failed reading tagged file: {}", e);
+            // return Err(ApiError::Internal("Failed reading tagged file".into()));
+        }
+    };
+    Ok(())
+}
+
+pub async fn extract_metadata(metadata: &mut FileScanCache) -> Result<(), ApiError> {
     let probe = Probe::open(&metadata.file_path).inspect_err(|e| {
         tracing::error!(
             "Failed to create metadata probe {} {}",
@@ -75,48 +122,7 @@ pub async fn extract_metadata(path: &Path, metadata: &mut FileScanCache) -> Resu
 
         if let Ok(probe) = probe.guess_file_type() {
             metadata.mime_type = get_mime_type(&probe.file_type());
-
-            match probe.read() {
-                Ok(tagged_file) => {
-                    if let Some(tag) = extract_besttag(tagged_file.tags()).await {
-                        if let Some(title) = tag.title() {
-                            metadata.title = Some(title.trim().to_string());
-                        }
-
-                        if let Some(artist) = tag.artist() {
-                            metadata.author = Some(artist.trim().to_string());
-                        }
-
-                        if let Some(album) = tag.album() {
-                            metadata.series = Some(album.trim().to_string());
-                        }
-
-                        if let Some(track) = tag.track() {
-                            metadata.track_number = Some(track as i64);
-                            println!("track num {}", track);
-                        }
-
-                        if let Some(year) = tag.year() {
-                            metadata.pub_year = Some(year as i64);
-                            // println!("pub year {}", year);
-                        }
-
-                        if let Some(track_total) = tag.track_total() {
-                            // metadata.pub_year = Some(year as i64);
-                            println!("track total {}", track_total);
-                        }
-                    }
-
-                    let properties = tagged_file.properties();
-
-                    metadata.duration = properties.duration().as_millis() as i64;
-                    metadata.bitrate = properties.audio_bitrate().map(|b| b as i64);
-                }
-                Err(e) => {
-                    tracing::error!("Failed reading tagged file: {}", e);
-                    return Err(ApiError::Internal("Failed reading tagged file".into()));
-                }
-            };
+            let _ = extract_tag(probe, metadata).await;
         } else {
             tracing::error!("Failed to guess file type {}", &metadata.file_path);
         }
@@ -130,10 +136,20 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError>
         if let Ok(item) = entry {
             if item.file_type().is_file() {
                 let fpath = item.path();
+
                 let ext = fpath
                     .extension()
                     .and_then(|f| f.to_str())
                     .map(|f| f.to_lowercase());
+
+                // Skip execution if file isnt a valid format
+                if let Some(ext) = &ext {
+                    if !matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") {
+                        continue;
+                    }
+                } else {
+                    continue; // Skip if no extension present
+                }
 
                 let file_name = fpath
                     .file_name()
@@ -141,29 +157,27 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError>
                     .to_string_lossy()
                     .to_string();
 
-                let path_owned = fpath.to_owned().to_string_lossy().to_string();
+                let path_parent = match fpath.parent() {
+                    Some(p) => p.to_string_lossy().to_string(),
+                    _ => "".to_owned(),
+                };
 
-                let mut metadata = FileScanCache::new(path_owned, file_name.clone());
+                let path_owned = fpath.to_string_lossy().to_string();
+
+                let mut metadata = FileScanCache::new(path_owned, file_name, path_parent);
                 if let Ok(f_meta) = fs::metadata(&metadata.file_path).await {
                     metadata.file_size = f_meta.len() as i64;
                 }
 
-                match ext {
-                    Some(ext) if matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") => {
-                        extract_metadata(fpath, &mut metadata).await?;
-                        println!("File {}", item.path().display());
-                    }
-                    Some(ext) if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") => {
-                        metadata.cover_art = create_cover_link(&fpath.to_path_buf(), &ext).await?;
-                    }
-                    Some(other_ext) => {
-                        println!("Unsupported file type: {}", other_ext);
-                    }
-                    None => {
-                        println!("File has no extension: {:?}", fpath);
-                    }
+                if let Err(e) = extract_metadata(&mut metadata).await {
+                    tracing::error!("Failed to extract metadata {} | {}.", fpath.display(), e);
                 }
-                println!("{:#?}", metadata);
+
+                // println!("{:#?}", metadata);
+                meta_cleanup(&mut metadata);
+                if let Err(e) = save_meta(db, metadata).await {
+                    tracing::error!("Failed to save {}", e);
+                }
             }
         }
     }

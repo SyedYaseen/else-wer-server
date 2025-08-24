@@ -58,9 +58,12 @@ CREATE TABLE IF NOT EXISTS file_scan_cache (
     library_id INTEGER DEFAULT 1, -- multiple libraries later
     author TEXT, -- allow NULL in case we can't parse
     title TEXT,
+    clean_title TEXT,
     file_path TEXT NOT NULL,
     file_name TEXT NOT NULL,
     series TEXT,
+    clean_series TEXT,
+    dramatized BOOLEAN NOT NULL DEFAULT FALSE,
     series_part INTEGER DEFAULT NULL, -- store series order if known
     cover_art TEXT, -- path or URL to extracted cover
     pub_year INTEGER,
@@ -73,7 +76,9 @@ CREATE TABLE IF NOT EXISTS file_scan_cache (
     channels INTEGER,
     sample_rate INTEGER,
     bitrate INTEGER,
+    extracts TEXT, -- extracts from series, author, title, filename as json
     raw_metadata TEXT NOT NULL, -- store full JSON dump
+    resolve_status INTEGER,
     hash TEXT, -- optional: for duplicate detection
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
