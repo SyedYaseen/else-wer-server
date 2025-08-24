@@ -128,7 +128,14 @@ fn series_cleanup(metadata: &mut FileScanCache) {
         let (clean_series, extracted_info) = clean_metadata(series);
         metadata.clean_series = Some(clean_series);
 
-        capture_order(&series);
+        let order_cleared_series = match &metadata.clean_series {
+            Some(val) => Some(BOOK_ORDER_TOKENS.replace_all(val, "").trim().to_string()),
+            None => None,
+        };
+
+        metadata.clean_series = order_cleared_series;
+
+        // capture_order(&series);
 
         if extracted_info.iter().len() > 0 {
             let joined_extract = extracted_info.join(",");
