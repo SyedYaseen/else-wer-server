@@ -1,5 +1,6 @@
 use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
+use crate::db::meta_scan::group_meta_fetch;
 use crate::file_ops::file_ops;
 use crate::models::audiobooks::FileMetadata;
 use crate::{AppState, api::api_error::ApiError};
@@ -52,6 +53,26 @@ pub async fn scan_files(
     let db = &state.db_pool;
 
     let books = file_ops::scan_for_audiobooks(path, db).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Scan completed successfully",
+            "books_processed": books.len(),
+            "books": books,
+        })),
+    ))
+}
+
+pub async fn grouped_books(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+) -> Result<impl IntoResponse, ApiError> {
+    let path = &state.config.book_files;
+    let db = &state.db_pool;
+
+    // let books = file_ops::scan_for_audiobooks(path, db).await?;
+    let books = group_meta_fetch(db).await?;
+    // let books_json = serde_json::to_string(&books)?;
     Ok((
         StatusCode::OK,
         Json(json!({

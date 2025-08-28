@@ -42,6 +42,9 @@ pub enum ApiError {
 
     #[error("Lofty error: {0}")]
     LoftyErr(#[from] LoftyError),
+
+    #[error("Serde Json: {0}")]
+    JsonErr(#[from] serde_json::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -79,6 +82,10 @@ impl IntoResponse for ApiError {
             ApiError::LoftyErr(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Err while reading files".to_string(),
+            ),
+            ApiError::JsonErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while serialization".to_string(),
             ),
         };
 

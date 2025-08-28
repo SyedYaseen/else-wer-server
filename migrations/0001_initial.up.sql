@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS file_scan_cache (
     clean_title TEXT,
     file_path TEXT NOT NULL,
     file_name TEXT NOT NULL,
+    path_parent TEXT NOT NULL,
     series TEXT,
     clean_series TEXT,
     dramatized BOOLEAN NOT NULL DEFAULT FALSE,

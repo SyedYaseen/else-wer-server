@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,4 +91,31 @@ impl FileScanCache {
             resolve_status: ResolvedStatus::UnResolved,
         }
     }
+}
+
+#[derive(Serialize, Debug)]
+pub struct FileInfo {
+    pub id: i64,
+    pub title: String,
+    pub series: String,
+    pub file_path: String,
+    pub path_parent: String,
+    pub file_name: String,
+}
+
+#[derive(Serialize)]
+pub struct BookInfo {
+    pub series: String,
+    pub files: Vec<FileInfo>,
+}
+
+#[derive(Serialize)]
+pub struct AuthorInfo {
+    pub books: Vec<BookInfo>,
+}
+
+#[derive(Serialize)]
+pub struct FileScanGrouped {
+    pub series: String,
+    pub authors: Vec<AuthorInfo>,
 }

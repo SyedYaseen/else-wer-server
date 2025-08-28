@@ -1,11 +1,14 @@
-use std::{fs::File, io::BufReader};
+use std::{fs::File, io::BufReader, path::Path};
 use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
     db::meta_scan::save_meta,
-    file_ops::{meta_cleanup::meta_cleanup, utils::create_cover_link},
-    models::fs_models::FileScanCache,
+    file_ops::{
+        meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
+        utils::create_cover_link,
+    },
+    models::meta_scan::FileScanCache,
 };
 
 use lofty::{
@@ -131,7 +134,29 @@ pub async fn extract_metadata(metadata: &mut FileScanCache) -> Result<(), ApiErr
     Ok(())
 }
 
+async fn create_metadata(fpath: &Path) -> FileScanCache {
+    let file_name = fpath
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let path_parent = match fpath.parent() {
+        Some(p) => p.to_string_lossy().to_string(),
+        _ => "".to_owned(),
+    };
+
+    let path_owned = fpath.to_string_lossy().to_string();
+
+    let mut metadata = FileScanCache::new(path_owned, file_name, path_parent);
+    if let Ok(f_meta) = fs::metadata(&metadata.file_path).await {
+        metadata.file_size = f_meta.len() as i64;
+    }
+    metadata
+}
+
 pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError> {
+    // prelim scan and meta extract
     for entry in WalkDir::new(path_str).contents_first(true) {
         if let Ok(item) = entry {
             if item.file_type().is_file() {
@@ -151,29 +176,12 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError>
                     continue; // Skip if no extension present
                 }
 
-                let file_name = fpath
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-
-                let path_parent = match fpath.parent() {
-                    Some(p) => p.to_string_lossy().to_string(),
-                    _ => "".to_owned(),
-                };
-
-                let path_owned = fpath.to_string_lossy().to_string();
-
-                let mut metadata = FileScanCache::new(path_owned, file_name, path_parent);
-                if let Ok(f_meta) = fs::metadata(&metadata.file_path).await {
-                    metadata.file_size = f_meta.len() as i64;
-                }
+                let mut metadata = create_metadata(&fpath).await;
 
                 if let Err(e) = extract_metadata(&mut metadata).await {
                     tracing::error!("Failed to extract metadata {} | {}.", fpath.display(), e);
                 }
 
-                // println!("{:#?}", metadata);
                 meta_cleanup(&mut metadata);
                 if let Err(e) = save_meta(db, metadata).await {
                     tracing::error!("Failed to save {}", e);
@@ -181,7 +189,9 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError>
             }
         }
     }
-    // Once files are found, extract their metadata
+
+    // Second db scan and cleanup
+    // grouped_meta_cleanup(db).await;
 
     // capture the file name to look for clues on order of file
 
