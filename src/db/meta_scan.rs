@@ -1,7 +1,7 @@
 use std::{collections::HashMap, hash::Hash};
 
 use axum::extract::{Path, path};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, QueryBuilder, Sqlite, SqlitePool};
 use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
@@ -9,7 +9,9 @@ use tokio::{
 
 use crate::{
     api::api_error::ApiError,
-    models::meta_scan::{AuthorInfo, FileInfo, FileScanCache, FileScanGrouped},
+    models::meta_scan::{
+        AuthorInfo, ChangeDto, ChangeType, FileInfo, FileScanCache, FileScanGrouped,
+    },
 };
 
 pub async fn save_meta(db: &Pool<Sqlite>, metadata: FileScanCache) -> Result<(), ApiError> {
@@ -180,4 +182,101 @@ pub async fn group_meta_fetch(
     json_file.write_all(json_bytes).await?;
 
     Ok(result)
+}
+
+pub async fn apply_changes(pool: &SqlitePool, changes: Vec<ChangeDto>) -> Result<(), sqlx::Error> {
+    for change in changes {
+        match change.change_type {
+            ChangeType::Rename => {
+                if let Some(new_title) = change.new_filetitle {
+                    let mut qb: QueryBuilder<sqlx::Sqlite> =
+                        QueryBuilder::new("UPDATE file_scan_cache SET clean_series = ");
+                    qb.push_bind(new_title).push(" WHERE id IN (");
+
+                    let mut separated = qb.separated(", ");
+                    for id in &change.file_ids {
+                        separated.push_bind(id);
+                    }
+                    separated.push_unseparated(")");
+                    qb.build().execute(pool).await?;
+                }
+            }
+
+            ChangeType::MoveTitle => {
+                if let Some(new_author) = change.new_author {
+                    let mut qb: QueryBuilder<sqlx::Sqlite> =
+                        QueryBuilder::new("UPDATE file_scan_cache SET author = ");
+                    qb.push_bind(new_author).push(" WHERE id IN (");
+
+                    let mut separated = qb.separated(", ");
+                    for id in &change.file_ids {
+                        separated.push_bind(id);
+                    }
+                    separated.push_unseparated(")");
+                    qb.build().execute(pool).await?;
+                }
+            }
+
+            ChangeType::MergeTitle => {
+                if let Some(new_author) = change.new_author {
+                    let mut qb: QueryBuilder<sqlx::Sqlite> =
+                        QueryBuilder::new("UPDATE file_scan_cache SET author = ");
+                    qb.push_bind(new_author).push(" WHERE id IN (");
+
+                    let mut separated = qb.separated(", ");
+                    for id in &change.file_ids {
+                        separated.push_bind(id);
+                    }
+                    separated.push_unseparated(")");
+                    qb.build().execute(pool).await?;
+                }
+
+                if let Some(new_series) = change.new_series {
+                    let mut qb: QueryBuilder<sqlx::Sqlite> =
+                        QueryBuilder::new("UPDATE file_scan_cache SET clean_series = ");
+                    qb.push_bind(new_series).push(" WHERE id IN (");
+
+                    let mut separated = qb.separated(", ");
+                    for id in &change.file_ids {
+                        separated.push_bind(id);
+                    }
+                    separated.push_unseparated(")");
+                    qb.build().execute(pool).await?;
+                }
+            }
+
+            ChangeType::FileMove => {
+                // This is like moving files under a new series/author
+                let mut qb: QueryBuilder<sqlx::Sqlite> =
+                    QueryBuilder::new("UPDATE file_scan_cache SET ");
+                let mut set_parts = Vec::new();
+
+                if let Some(new_author) = change.new_author {
+                    set_parts.push(("author", new_author));
+                }
+                if let Some(new_series) = change.new_series {
+                    set_parts.push(("clean_series", new_series));
+                }
+                if let Some(new_filetitle) = change.new_filetitle {
+                    set_parts.push(("title", new_filetitle));
+                }
+
+                for (i, (field, value)) in set_parts.into_iter().enumerate() {
+                    if i > 0 {
+                        qb.push(", ");
+                    }
+                    qb.push(field).push(" = ").push_bind(value);
+                }
+
+                qb.push(" WHERE id IN (");
+                let mut separated = qb.separated(", ");
+                for id in &change.file_ids {
+                    separated.push_bind(id);
+                }
+                separated.push_unseparated(")");
+                qb.build().execute(pool).await?;
+            }
+        }
+    }
+    Ok(())
 }
