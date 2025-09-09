@@ -2,7 +2,9 @@ use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::group_meta_fetch;
 use crate::file_ops::file_ops;
+use crate::file_ops::org_books::organize_books;
 use crate::models::audiobooks::FileMetadata;
+use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
 use axum::http::HeaderMap;
 use axum::{
@@ -12,8 +14,6 @@ use axum::{
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
-
-use base64::engine::general_purpose;
 
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
@@ -79,6 +79,21 @@ pub async fn grouped_books(
             "message": "Scan completed successfully",
             "books_processed": books.len(),
             "books": books,
+        })),
+    ))
+}
+
+pub async fn confirm_bookscan(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+    Json(payload): Json<Vec<ChangeDto>>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    organize_books(db, payload).await;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Confirmed entry",
         })),
     ))
 }

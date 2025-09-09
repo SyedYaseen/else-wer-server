@@ -12,12 +12,13 @@ use crate::{
 };
 use axum::{
     Router,
-    http::{self, Request},
+    http::{self, HeaderValue, Method, Request},
 };
 use dotenv::dotenv;
 use services::startup::ensure_admin_user;
 use sqlx::SqlitePool;
 use std::{net::SocketAddr, sync::Arc};
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -49,6 +50,10 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::clone(&config),
     };
 
+    let cors = CorsLayer::new()
+        .allow_origin("http://localhost:3001".parse::<HeaderValue>().unwrap())
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([http::header::CONTENT_TYPE, http::header::AUTHORIZATION]);
     let app = Router::new()
         .nest("/api", api::routes().await)
         .with_state(state)
@@ -102,7 +107,8 @@ async fn main() -> anyhow::Result<()> {
         // This propagates it back to the response
         .layer(PropagateRequestIdLayer::new(
             http::header::HeaderName::from_static("x-request-id"),
-        ));
+        ))
+        .layer(cors);
 
     let addr: SocketAddr = "0.0.0.0:3000".parse().unwrap();
     info!(%addr, "listening");

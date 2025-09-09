@@ -14,7 +14,10 @@ pub mod user;
 use crate::{
     AppState,
     api::{
-        audiobooks::{download_book, download_chunk, file_metadata, grouped_books, list_books},
+        audiobooks::{
+            confirm_bookscan, download_book, download_chunk, file_metadata, grouped_books,
+            list_books,
+        },
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
@@ -26,9 +29,11 @@ pub async fn routes() -> Router<AppState> {
     Router::new()
         .nest_service("/covers", ServeDir::new("covers"))
         .route("/hello", get(hello))
+        // bookscan + edit
+        .route("/grouped_books", get(grouped_books))
+        .route("/confirm_bookscan", post(confirm_bookscan))
         // Books
         .route("/scan_files", get(scan_files))
-        .route("/grouped_books", get(grouped_books))
         .route("/list_books", get(list_books))
         // Files
         .route("/download_book/{book_id}", get(download_book))

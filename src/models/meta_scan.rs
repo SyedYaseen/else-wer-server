@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use sqlx::types::Json;
-use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResolvedStatus {
@@ -118,4 +116,39 @@ pub struct AuthorInfo {
 pub struct FileScanGrouped {
     pub series: String,
     pub authors: Vec<AuthorInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChangeType {
+    Rename,
+    MoveTitle,
+    MergeTitle,
+    FileMove,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangeDto {
+    pub change_type: ChangeType,
+
+    /// IDs of affected files. Use u64 (or i64) depending on your DB / JS id types.
+    pub file_ids: Vec<i64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_author: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_series: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_filetitle: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_author: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_series: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_filetitle: Option<String>,
 }

@@ -10,3 +10,5 @@ covers
 backupdata
 datatest
 /logs
+bookresmultipart.json
+.gitignore
