@@ -2,13 +2,14 @@ use sqlx::{Pool, Sqlite};
 
 use crate::{
     api::api_error::ApiError,
-    db::meta_scan::apply_dbchanges,
+    db::meta_scan::{apply_dbchanges, propagate_changes},
     models::meta_scan::{ChangeDto, FileScanCache},
 };
 
 pub async fn organize_books(db: &Pool<Sqlite>, changes: Vec<ChangeDto>) -> Result<(), ApiError> {
-    apply_dbchanges(db, changes.clone()).await?;
+    // apply_dbchanges(db, changes.clone()).await?;
     // handle_metadata_changes(db, changes).await?;
+    propagate_changes(db).await?;
 
     Ok(())
 }

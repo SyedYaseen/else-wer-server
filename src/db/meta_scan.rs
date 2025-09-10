@@ -1,18 +1,9 @@
-use std::{collections::HashMap, hash::Hash};
-
-use axum::extract::{Path, path};
-use sqlx::{Pool, QueryBuilder, Sqlite, SqlitePool};
-use tokio::{
-    fs::{self, File},
-    io::AsyncWriteExt,
-};
-
 use crate::{
     api::api_error::ApiError,
-    models::meta_scan::{
-        AuthorInfo, ChangeDto, ChangeType, FileInfo, FileScanCache, FileScanGrouped,
-    },
+    models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache},
 };
+use sqlx::{Pool, QueryBuilder, Sqlite, SqlitePool};
+use std::collections::HashMap;
 
 pub async fn save_meta(db: &Pool<Sqlite>, metadata: FileScanCache) -> Result<(), ApiError> {
     let resolve_status = metadata.resolve_status.value();
@@ -176,10 +167,10 @@ pub async fn group_meta_fetch(
         book_entry.push(file_info);
     }
 
-    let res_json = serde_json::to_string_pretty(&result).unwrap_or_default();
-    let json_bytes = res_json.as_bytes();
-    let mut json_file = fs::File::create("bookresmultipart.json").await?;
-    json_file.write_all(json_bytes).await?;
+    // let res_json = serde_json::to_string_pretty(&result).unwrap_or_default();
+    // let json_bytes = res_json.as_bytes();
+    // let mut json_file = fs::File::create("bookresmultipart.json").await?;
+    // json_file.write_all(json_bytes).await?;
 
     Ok(result)
 }
@@ -284,6 +275,67 @@ pub async fn apply_dbchanges(
     Ok(())
 }
 
+pub async fn propagate_changes(pool: &SqlitePool) -> Result<(), ApiError> {
+    sqlx::query(
+        r#"
+        INSERT INTO audiobooks (author, series, title, files_location, cover_art, metadata, duration, created_at, updated_at)
+        SELECT
+            fsc.author,
+            fsc.clean_series,
+            fsc.clean_series,
+            fsc.path_parent,
+            fsc.cover_art,
+            fsc.raw_metadata,
+            fsc.duration,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        FROM file_scan_cache fsc
+        WHERE fsc.resolve_status = 0 and fsc.author IS NOT NULL and fsc.clean_series is not null
+        ON CONFLICT(author, title) DO UPDATE SET
+            series = excluded.series,
+            files_location = excluded.files_location,
+            cover_art = excluded.cover_art,
+            metadata = excluded.metadata,
+            duration = excluded.duration,
+            updated_at = CURRENT_TIMESTAMP
+        "#
+    )
+    .execute(pool)
+    .await.unwrap();
+
+    // 2️⃣ Upsert files
+    sqlx::query(
+        r#"
+        INSERT INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
+        SELECT
+            ab.id AS book_id,
+            fsc.id AS file_id,
+            fsc.file_name,
+            fsc.file_path,
+            fsc.duration,
+            fsc.channels,
+            fsc.sample_rate,
+            fsc.bitrate
+        FROM
+            file_scan_cache fsc
+            JOIN audiobooks ab ON ab.author = fsc.author
+            AND ab.title = fsc.clean_series
+        WHERE
+            fsc.resolve_status = 0
+        ON CONFLICT(book_id, file_id, file_path) DO UPDATE SET
+            file_name = excluded.file_name,
+            file_path = excluded.file_path,
+            duration = excluded.duration,
+            channels = excluded.channels,
+            sample_rate = excluded.sample_rate,
+            bitrate = excluded.bitrate
+        "#
+    )
+    .execute(pool)
+    .await.unwrap();
+    println!("Here");
+    Ok(())
+}
 // pub async fn get_changes(
 //     db: &Pool<Sqlite>,
 //     ids: &Vec<i64>,
