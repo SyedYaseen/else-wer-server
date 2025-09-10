@@ -184,7 +184,10 @@ pub async fn group_meta_fetch(
     Ok(result)
 }
 
-pub async fn apply_changes(pool: &SqlitePool, changes: Vec<ChangeDto>) -> Result<(), sqlx::Error> {
+pub async fn apply_dbchanges(
+    pool: &SqlitePool,
+    changes: Vec<ChangeDto>,
+) -> Result<(), sqlx::Error> {
     for change in changes {
         match change.change_type {
             ChangeType::Rename => {
@@ -280,3 +283,20 @@ pub async fn apply_changes(pool: &SqlitePool, changes: Vec<ChangeDto>) -> Result
     }
     Ok(())
 }
+
+// pub async fn get_changes(
+//     db: &Pool<Sqlite>,
+//     ids: &Vec<i64>,
+// ) -> Result<Vec<FileScanCache>, ApiError> {
+//     let mut qb: QueryBuilder<Sqlite> =
+//         QueryBuilder::new("SELECT * FROM file_scan_cache WHERE id IN (");
+
+//     let mut separated = qb.separated(", ");
+//     for id in ids {
+//         separated.push_bind(id);
+//     }
+//     separated.push_unseparated(")");
+
+//     let rows: Vec<FileScanCache> = qb.build_query_as().fetch_all(db).await?;
+//     Ok(rows)
+// }

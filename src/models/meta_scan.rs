@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
+use sqlx::sqlite::{SqliteTypeInfo, SqliteValueRef};
+use sqlx::{Decode, Encode, Sqlite, Type};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(i64)]
 pub enum ResolvedStatus {
     UnResolved = 0,
     AutoResolved = 1,
@@ -29,7 +33,35 @@ impl ResolvedStatus {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl Type<Sqlite> for ResolvedStatus {
+    fn type_info() -> SqliteTypeInfo {
+        <i64 as Type<Sqlite>>::type_info()
+    }
+}
+
+impl<'r> Decode<'r, Sqlite> for ResolvedStatus {
+    fn decode(value: SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let int_val = <i64 as Decode<Sqlite>>::decode(value)?;
+        match int_val {
+            0 => Ok(ResolvedStatus::UnResolved),
+            1 => Ok(ResolvedStatus::AutoResolved),
+            2 => Ok(ResolvedStatus::UserResolved),
+            4 => Ok(ResolvedStatus::Ignored),
+            other => Err(format!("Invalid ResolvedStatus value: {}", other).into()),
+        }
+    }
+}
+
+// impl<'q> Encode<'q, Sqlite> for ResolvedStatus {
+//     fn encode_by_ref(
+//         &self,
+//         buf: &mut <Sqlite as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
+//     ) -> sqlx::encode::IsNull {
+//         (*(*self as i64)).encode_by_ref(buf)
+//     }
+// }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct FileScanCache {
     // pub library_id: i64,
     pub author: Option<String>,
@@ -131,7 +163,6 @@ pub enum ChangeType {
 pub struct ChangeDto {
     pub change_type: ChangeType,
 
-    /// IDs of affected files. Use u64 (or i64) depending on your DB / JS id types.
     pub file_ids: Vec<i64>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
