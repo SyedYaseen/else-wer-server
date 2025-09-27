@@ -5,6 +5,19 @@ use crate::{
 use sqlx::{Pool, QueryBuilder, Sqlite, SqlitePool};
 use std::collections::HashMap;
 
+pub async fn scan_cache_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
+    let row = sqlx::query!(
+        r#"
+        SELECT COUNT(id) as count
+        FROM file_scan_cache
+        "#
+    )
+    .fetch_one(db)
+    .await?;
+
+    Ok(row.count)
+}
+
 pub async fn save_meta(db: &Pool<Sqlite>, metadata: FileScanCache) -> Result<(), ApiError> {
     let resolve_status = metadata.resolve_status.value();
     let rawmet = "".to_owned();
@@ -99,7 +112,7 @@ pub async fn group_title_cleanup_multipart(db: &Pool<Sqlite>) -> Result<(), ApiE
     Ok(())
 }
 
-pub async fn group_meta_fetch(
+pub async fn get_grouped_files(
     db: &Pool<Sqlite>,
 ) -> Result<HashMap<String, HashMap<String, Vec<FileInfo>>>, ApiError> {
     let rows = sqlx::query!(

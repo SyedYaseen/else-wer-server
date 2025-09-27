@@ -1,6 +1,6 @@
 use crate::api::api_error::ApiError;
 use crate::api::user::save_pwd_hash;
-use crate::db::meta_scan::group_meta_fetch;
+use crate::db::meta_scan::get_grouped_files;
 use crate::db::user::admin_exists;
 use crate::file_ops::book_cover::{cover_links, create_cover_link};
 use crate::file_ops::file_ops::scan_for_audiobooks;
@@ -71,7 +71,7 @@ pub async fn scan_files_startup(path_str: &String, db: &SqlitePool) -> Result<()
     // scan_for_audiobooks(path_str, db).await?;
     // scan_files(path_str, db).await?;
     // group_meta_fetch(db).await?;
-    cover_links(db).await?;
+    // cover_links(db).await?;
 
     info!("Completed audiobooks file scan");
     Ok(())

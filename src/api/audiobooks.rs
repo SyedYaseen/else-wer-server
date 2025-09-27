@@ -1,8 +1,8 @@
 use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
-use crate::db::meta_scan::group_meta_fetch;
-use crate::file_ops::file_ops;
+use crate::db::meta_scan::{get_grouped_files, scan_cache_count};
 use crate::file_ops::org_books::save_organized_books;
+use crate::file_ops::{file_ops, scan_files::scan_files};
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
@@ -26,7 +26,63 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
 
-pub async fn list_books(
+// Scan all audiobook files on local hard drive
+pub async fn scan_files_handler(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+) -> Result<impl IntoResponse, ApiError> {
+    let path = &state.config.book_files;
+    let db = &state.db_pool;
+
+    let files_count = scan_files(path, db).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Scan completed successfully",
+            "files_scanned": files_count,
+        })),
+        // TODO: Append failed scan locations into a warn/ err array response
+    ))
+}
+
+// Get list of all audiobookfiles grouped by author -> book -> files
+pub async fn list_scanned_files_handler(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+) -> Result<impl IntoResponse, ApiError> {
+    let path = &state.config.book_files;
+    let db = &state.db_pool;
+
+    if scan_cache_count(db).await? == 0 {
+        scan_files(path, db).await?;
+    }
+    let grouped_files = get_grouped_files(db).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "files": grouped_files,
+        })),
+    ))
+}
+
+// Save organization made by user on their local audiofiles
+pub async fn save_oraganized_files_handler(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+    Json(payload): Json<Vec<ChangeDto>>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    let _ = save_organized_books(db, payload).await;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Confirmed entry",
+        })),
+    ))
+}
+
+pub async fn list_books_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -43,59 +99,6 @@ pub async fn list_books(
             Err(ApiError::Internal("Failed to scan audiobooks".to_string()))
         }
     }
-}
-
-pub async fn scan_files(
-    State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
-) -> Result<impl IntoResponse, ApiError> {
-    let path = &state.config.book_files;
-    let db = &state.db_pool;
-
-    let books = file_ops::scan_for_audiobooks(path, db).await?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "message": "Scan completed successfully",
-            "books_processed": books.len(),
-            "books": books,
-        })),
-    ))
-}
-
-pub async fn grouped_books(
-    State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
-) -> Result<impl IntoResponse, ApiError> {
-    let path = &state.config.book_files;
-    let db = &state.db_pool;
-
-    // let books = file_ops::scan_for_audiobooks(path, db).await?;
-    let books = group_meta_fetch(db).await?;
-    // let books_json = serde_json::to_string(&books)?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "message": "Scan completed successfully",
-            "books_processed": books.len(),
-            "books": books,
-        })),
-    ))
-}
-
-pub async fn confirm_books(
-    State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
-    Json(payload): Json<Vec<ChangeDto>>,
-) -> Result<impl IntoResponse, ApiError> {
-    let db = &state.db_pool;
-    let _ = save_organized_books(db, payload).await;
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "message": "Confirmed entry",
-        })),
-    ))
 }
 
 pub async fn download_book(

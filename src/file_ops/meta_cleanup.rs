@@ -1,5 +1,5 @@
 use crate::{
-    api::api_error::ApiError, db::meta_scan::group_meta_fetch, models::meta_scan::FileScanCache,
+    api::api_error::ApiError, db::meta_scan::get_grouped_files, models::meta_scan::FileScanCache,
 };
 use lazy_static::lazy_static;
 use regex::Regex;

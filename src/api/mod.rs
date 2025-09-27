@@ -15,25 +15,26 @@ use crate::{
     AppState,
     api::{
         audiobooks::{
-            confirm_books, download_book, download_chunk, file_metadata, grouped_books, list_books,
+            download_book, download_chunk, file_metadata, list_books_handler,
+            list_scanned_files_handler, save_oraganized_files_handler,
         },
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
 };
 
-use audiobooks::scan_files;
+use audiobooks::scan_files_handler;
 
 pub async fn routes() -> Router<AppState> {
     Router::new()
         .nest_service("/covers", ServeDir::new("covers"))
         .route("/hello", get(hello))
         // bookscan + edit
-        .route("/grouped_books", get(grouped_books))
-        .route("/confirm_bookscan", post(confirm_books))
+        .route("/list_scanned_files", get(list_scanned_files_handler))
+        .route("/save_organized_files", post(save_oraganized_files_handler))
         // Books
-        .route("/scan_files", get(scan_files))
-        .route("/list_books", get(list_books))
+        .route("/scan_files", get(scan_files_handler))
+        .route("/list_books", get(list_books_handler))
         // Files
         .route("/download_book/{book_id}", get(download_book))
         .route("/download_chunk/{file_id}", get(download_chunk))

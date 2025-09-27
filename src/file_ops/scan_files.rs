@@ -152,8 +152,8 @@ async fn create_metadata(fpath: &Path) -> FileScanCache {
     metadata
 }
 
-pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError> {
-    // prelim scan and meta extract
+pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError> {
+    let mut count = 0;
     for entry in WalkDir::new(path_str).contents_first(true) {
         if let Ok(item) = entry {
             if item.file_type().is_file() {
@@ -183,6 +183,7 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError>
                 if let Err(e) = save_meta(db, metadata).await {
                     tracing::error!("Failed to save {}", e);
                 }
+                count += 1;
             }
         }
     }
@@ -193,5 +194,5 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<(), ApiError>
     // capture the file name to look for clues on order of file
 
     // Cross referece the parents, grandparents to check for clues of series name or author name to verify
-    Ok(())
+    Ok(count)
 }

@@ -6,7 +6,7 @@ use crate::{
     models::meta_scan::{ChangeDto, FileScanCache},
 };
 
-/// Save after organizing the books on the webui
+// Saves books organized on webui
 pub async fn save_organized_books(
     db: &Pool<Sqlite>,
     changes: Vec<ChangeDto>,
