@@ -6,10 +6,14 @@ use crate::{
     models::meta_scan::{ChangeDto, FileScanCache},
 };
 
-pub async fn organize_books(db: &Pool<Sqlite>, changes: Vec<ChangeDto>) -> Result<(), ApiError> {
-    // apply_dbchanges(db, changes.clone()).await?;
-    // handle_metadata_changes(db, changes).await?;
+/// Save after organizing the books on the webui
+pub async fn save_organized_books(
+    db: &Pool<Sqlite>,
+    changes: Vec<ChangeDto>,
+) -> Result<(), ApiError> {
+    apply_dbchanges(db, changes.clone()).await?;
     propagate_changes(db).await?;
+    // handle_metadata_changes(db, changes).await?;
 
     Ok(())
 }

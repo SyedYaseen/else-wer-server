@@ -1,12 +1,3 @@
-## Album name cases to handle
-Series in **front** with -, :, 
-Jack Reacher 12.5: James Penney’s New Identity - Guy Walks into a Bar (Kerry Shale)
-Skyward 1: Skyward (Suzy Jackson)
-Combine all series case into one - clean actula file name and add it?
-Remove dramatised? Keep it but let user add it as a tag
-## Author cases
-rename all GraphicAudio to same one after extracting any suffixes
-
 # Phase 1 Technical Plan (Rust server on Pi Zero)
 ## File Scanning
 - Use walkdir or ignore crate to recursively list files.

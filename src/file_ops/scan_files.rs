@@ -4,10 +4,7 @@ use walkdir::WalkDir;
 use crate::{
     api::api_error::ApiError,
     db::meta_scan::save_meta,
-    file_ops::{
-        meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
-        utils::create_cover_link,
-    },
+    file_ops::meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
     models::meta_scan::FileScanCache,
 };
 

@@ -2,6 +2,7 @@ use crate::api::api_error::ApiError;
 use crate::db::audiobooks::{
     insert_audiobook, insert_file_metadata, list_all_books, update_audiobook_duration,
 };
+use crate::file_ops::book_cover::create_cover_link;
 use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata};
 use futures::{StreamExt, stream};
 
@@ -19,11 +20,6 @@ use std::result::Result;
 use symphonia::core::meta;
 use tokio::{fs, task::JoinHandle};
 use tracing::{info, warn};
-
-#[cfg(unix)]
-use std::os::unix::fs::symlink;
-#[cfg(windows)]
-use std::os::windows::fs::symlink_file;
 
 async fn has_dirs(path: &PathBuf) -> Result<bool, ApiError> {
     let mut entries = fs::read_dir(path).await?;
@@ -110,86 +106,33 @@ async fn recursive_dirscan(
     Ok(())
 }
 
-pub async fn create_cover_link(
-    source: &PathBuf,
-    ext: &str,
-    book: &mut AudioBook,
-) -> Result<(), ApiError> {
-    let cover_name = &book.title.replace(' ', "_").to_lowercase().to_owned();
-    let re = Regex::new(r"[^a-z0-9_\-\.]").unwrap();
-    let cover_name = re.replace_all(&cover_name, "");
+// async fn get_book_files_link_covers(book: &mut AudioBook) -> Result<(), ApiError> {
+//     let mut entries = fs::read_dir(&book.content_path).await?;
+//     // TODO debug here for missing files
+//     while let Some(entry) = entries.next_entry().await? {
+//         let f_type = entry.file_type().await?;
+//         if !f_type.is_file() {
+//             continue;
+//         }
 
-    let link_name = format!("{}.{}", cover_name, ext);
-    let link_path = std::env::current_dir()?.join("covers").join(&link_name);
+//         let path = entry.path();
+//         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+//             match ext.to_lowercase().as_str() {
+//                 "jpg" | "jpeg" | "png" | "webp" => {
+//                     create_cover_link(&path, ext, book).await?;
+//                 }
+//                 "mp3" | "m4b" | "flac" | "m4a" => {
+//                     book.files.push(path.to_string_lossy().into_owned());
+//                 }
+//                 _ => {}
+//             }
+//         } else {
+//             info!("Ext not found: {}", path.display());
+//         }
+//     }
 
-    let source_path = std::env::current_dir()?.join(source);
-
-    // println!("Creating symlink: {:?} -> {:?}", link_path, source_path);
-
-    if !source_path.exists() {
-        return Err(ApiError::IOErrCustom(format!(
-            "Source does not exist: {:?}",
-            source_path
-        )));
-    }
-
-    if let Some(parent) = link_path.parent() {
-        let _ = fs::create_dir_all(parent).await.map_err(|e| {
-            tracing::error!("Err creating dir {}", parent.display());
-            e
-        });
-    }
-
-    #[cfg(unix)]
-    {
-        let _ = symlink(source_path, link_path).map_err(|e| {
-            tracing::error!("Failed cover art symlink {}. {}", link_name, e.to_string());
-        });
-    }
-
-    #[cfg(windows)]
-    {
-        // Windows only allows symlink creation with elevated privileges or dev mode
-        if let Err(_) = symlink_file(source_path, target_path) {
-            // fallback to copy
-            fs::copy(source_path, target_path).map_err(|e| {
-                tracing::error!("Failed to copy cover art {}. {}", link_name, e.to_string());
-            });
-        }
-    }
-
-    book.cover_art = Some(format!("/covers/{}", link_name));
-
-    Ok(())
-}
-
-async fn get_book_files_link_covers(book: &mut AudioBook) -> Result<(), ApiError> {
-    let mut entries = fs::read_dir(&book.content_path).await?;
-    // TODO debug here for missing files
-    while let Some(entry) = entries.next_entry().await? {
-        let f_type = entry.file_type().await?;
-        if !f_type.is_file() {
-            continue;
-        }
-
-        let path = entry.path();
-        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            match ext.to_lowercase().as_str() {
-                "jpg" | "jpeg" | "png" | "webp" => {
-                    create_cover_link(&path, ext, book).await?;
-                }
-                "mp3" | "m4b" | "flac" | "m4a" => {
-                    book.files.push(path.to_string_lossy().into_owned());
-                }
-                _ => {}
-            }
-        } else {
-            info!("Ext not found: {}", path.display());
-        }
-    }
-
-    Ok(())
-}
+//     Ok(())
+// }
 
 async fn capture_files_cover_paths(
     audio_books: Vec<AudioBook>,
@@ -201,9 +144,9 @@ async fn capture_files_cover_paths(
         info!("==== Before extracting, {}", book.title);
         let db = db.clone();
         insert_tasks.push(tokio::spawn(async move {
-            if let Err(e) = get_book_files_link_covers(&mut book).await {
-                tracing::error!("{} {}", book.title, e.to_string());
-            }
+            // if let Err(e) = get_book_files_link_covers(&mut book).await {
+            //     tracing::error!("{} {}", book.title, e.to_string());
+            // }
             let book_id = insert_audiobook(&db, &book).await?;
 
             Ok((book_id, book))

@@ -333,7 +333,6 @@ pub async fn propagate_changes(pool: &SqlitePool) -> Result<(), ApiError> {
     )
     .execute(pool)
     .await.unwrap();
-    println!("Here");
     Ok(())
 }
 // pub async fn get_changes(

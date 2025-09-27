@@ -2,7 +2,7 @@ use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::group_meta_fetch;
 use crate::file_ops::file_ops;
-use crate::file_ops::org_books::organize_books;
+use crate::file_ops::org_books::save_organized_books;
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
@@ -83,13 +83,13 @@ pub async fn grouped_books(
     ))
 }
 
-pub async fn confirm_bookscan(
+pub async fn confirm_books(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
     Json(payload): Json<Vec<ChangeDto>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
-    organize_books(db, payload).await;
+    let _ = save_organized_books(db, payload).await;
     Ok((
         StatusCode::OK,
         Json(json!({

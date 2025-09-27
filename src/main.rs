@@ -51,7 +51,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let cors = CorsLayer::new()
-        .allow_origin("http://localhost:3001".parse::<HeaderValue>().unwrap())
+        // .allow_origin("http://localhost:3001".parse::<HeaderValue>().unwrap())
+        .allow_origin(Any) // allows all origins
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([http::header::CONTENT_TYPE, http::header::AUTHORIZATION]);
     let app = Router::new()
