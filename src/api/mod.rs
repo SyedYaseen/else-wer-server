@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::services::ServeDir;
-mod api_error;
+pub mod api_error;
 mod audiobooks;
 mod auth_extractor;
 mod middleware;
@@ -14,22 +14,30 @@ pub mod user;
 use crate::{
     AppState,
     api::{
-        audiobooks::{download_book, file_metadata, list_books},
+        audiobooks::{
+            download_book, download_chunk, file_metadata, list_books_handler,
+            list_scanned_files_handler, save_oraganized_files_handler,
+        },
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
 };
-use audiobooks::scan_files;
+
+use audiobooks::scan_files_handler;
 
 pub async fn routes() -> Router<AppState> {
     Router::new()
         .nest_service("/covers", ServeDir::new("covers"))
         .route("/hello", get(hello))
+        // bookscan + edit
+        .route("/list_scanned_files", get(list_scanned_files_handler))
+        .route("/save_organized_files", post(save_oraganized_files_handler))
         // Books
-        .route("/scan_files", get(scan_files))
-        .route("/list_books", get(list_books))
+        .route("/scan_files", get(scan_files_handler))
+        .route("/list_books", get(list_books_handler))
         // Files
         .route("/download_book/{book_id}", get(download_book))
+        .route("/download_chunk/{file_id}", get(download_chunk))
         .route("/file_metadata/{book_id}", get(file_metadata))
         // Sync
         .route(
@@ -55,6 +63,8 @@ async fn hello(State(_state): State<AppState>) -> impl IntoResponse {
 
     // let source = std::env::current_dir().unwrap().join(&src_p);
     // let target = curr_dir.clone().join(&dest_p);
-
+    // info!("IN hello endpoint");
+    // tracing::error!("IN hello endpoint");
+    // ApiError::Internal("Soething went".to_string())
     Html("<h1>Hello</h1>")
 }

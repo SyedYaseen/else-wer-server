@@ -1,8 +1,10 @@
-use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata};
-use anyhow::{Context, Error, Result};
+use crate::{
+    api::api_error::ApiError,
+    models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata, FileMetadata},
+};
 use sqlx::{Pool, Sqlite};
 
-pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
+pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiError> {
     let books = sqlx::query_as::<_, AudioBookRow>(
         r#"
         SELECT id, author, series, title, files_location, cover_art, duration, metadata
@@ -16,7 +18,7 @@ pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>> {
     Ok(books)
 }
 
-pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, Error> {
+pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, ApiError> {
     let id = sqlx::query_scalar!(
         r#"
         INSERT INTO audiobooks 
@@ -41,15 +43,15 @@ pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
 pub async fn update_audiobook_duration(
     db: &Pool<Sqlite>,
     bookid: i64,
-    book: &AudioBook,
-) -> Result<(), Error> {
+    duration: i64,
+) -> Result<(), ApiError> {
     sqlx::query!(
         r#"
         UPDATE audiobooks
         SET duration = ?1
         WHERE id = ?2
         "#,
-        book.duration,
+        duration,
         bookid
     )
     .execute(db)
@@ -61,9 +63,9 @@ pub async fn update_audiobook_duration(
 pub async fn insert_file_metadata(
     db: &Pool<Sqlite>,
     create_data: &mut CreateFileMetadata,
-) -> anyhow::Result<()> {
+) -> Result<(), ApiError> {
     // let file_path = create_data.file_path.to_string().to_owned();
-    match 
+
     sqlx::query!(
         r#"
         INSERT INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
@@ -79,19 +81,12 @@ pub async fn insert_file_metadata(
         create_data.bitrate
     )
     .execute(db)
-    .await
-    .with_context(|| format!("Err adding files for {}", create_data.file_name)) {
-        Err(_) => {
-            // eprint!("{}" , e);
-            Ok(())
-        },
-        _ => Ok(())
-    }
+    .await?;
 
-    // Ok(())
+    Ok(())
 }
 
-pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64> {
+pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64, ApiError> {
     let row: (i64,) = sqlx::query_as(
         r#"
         SELECT id
@@ -122,7 +117,10 @@ pub async fn get_audiobook_id(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
 //     Ok(row)
 // }
 
-pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec<FileMetadata>> {
+pub async fn get_files_by_book_id(
+    db: &Pool<Sqlite>,
+    book_id: i64,
+) -> Result<Vec<FileMetadata>, ApiError> {
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -162,4 +160,21 @@ pub async fn get_files_by_book_id(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec
         .collect();
 
     Ok(files)
+}
+
+pub async fn get_file_path(db: &Pool<Sqlite>, file_id: i64) -> Result<String, ApiError> {
+    let path: (String,) = sqlx::query_as(
+        r#"
+        SELECT
+            file_path
+        FROM files
+        WHERE id = ?
+        ORDER BY id
+        "#,
+    )
+    .bind(file_id)
+    .fetch_one(db)
+    .await?;
+
+    Ok(path.0)
 }

@@ -52,7 +52,7 @@ pub async fn update_progress(
         .await
         .map_err(|e| {
             println!("🚨 Upsert Error: {e}");
-            ApiError::InternalServerError("Upsert failed".into())
+            ApiError::Internal("Upsert failed".into())
         })?;
 
     println!("✅ Upsert succeeded");

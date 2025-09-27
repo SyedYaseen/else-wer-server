@@ -1,3 +1,4 @@
+use crate::api::api_error::ApiError;
 use crate::api::middleware::AdminUser;
 use crate::db::user::{self, get_user_by_username};
 use crate::models::user::{Claims, User};
@@ -5,7 +6,6 @@ use crate::{
     AppState,
     models::user::{LoginDto, UserDto},
 };
-use anyhow::Result;
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
@@ -21,30 +21,23 @@ pub async fn create_user(
     AdminUser(_claims): AdminUser,
     State(state): State<AppState>,
     Json(payload): Json<UserDto>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
 
     if payload.username.is_empty() || payload.password.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": "Provide both username and password" })),
-        );
+        return Err(ApiError::BadRequest(
+            "Provide both username and password".into(),
+        ));
     }
 
-    match save_pwd_hash(&payload, db).await {
-        Result::Ok(user) => {
-            let message = format!("User {} created successfully", user.username);
-
-            (StatusCode::CREATED, Json(json!({ "message": message })))
-        }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": format!("Auth failed: {}", e) })),
-        ),
-    }
+    let user = save_pwd_hash(&payload, db).await?;
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({ "message": format!("User {} created successfully", user.username) })),
+    ))
 }
 
-pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User> {
+pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, ApiError> {
     let argon2 = Argon2::default();
     let password_bytes = &user.password.clone().into_bytes();
 
@@ -68,56 +61,48 @@ pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User> {
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginDto>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ApiError> {
     let db: &Pool<Sqlite> = &state.db_pool;
     let config = &state.config;
 
-    let jwt = config.jwt_secret.as_ref().unwrap(); // TODO: Handle unwrap properly
-    let jwt_bytes = jwt.as_bytes();
+    let jwt = config.jwt_secret.as_ref().unwrap().as_bytes(); // TODO: Handle unwrap properly
 
-    match auth_and_issue_jwt(&payload, db, &jwt_bytes).await {
-        Ok(token) => (StatusCode::ACCEPTED, Json(json!({ "token": token }))),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": format!("Login failed: {}", e) })),
-        ),
-    }
+    let token = auth_and_issue_jwt(&payload, db, jwt).await?;
+    Ok((StatusCode::ACCEPTED, Json(json!({"token": token}))))
 }
 
 async fn auth_and_issue_jwt(
     user_input: &LoginDto,
     db: &Pool<Sqlite>,
     jwt_secret: &[u8],
-) -> Result<String> {
-    if let Some(user) = get_user_by_username(db, &user_input.username).await? {
-        let parsed_hash = PasswordHash::new(&user.password_hash)?;
-        Argon2::default()
-            .verify_password(user_input.password.as_bytes(), &parsed_hash)
-            .map_err(|_| anyhow::anyhow!("Invalid username or password"))?;
+) -> Result<String, ApiError> {
+    let user = get_user_by_username(db, &user_input.username)
+        .await?
+        .ok_or_else(|| ApiError::BadRequest("User not found".to_string()))?;
 
-        let now = Utc::now();
-        let exp = now + Duration::hours(24); // token valid for 24 hours
+    let parsed_hash = PasswordHash::new(&user.password_hash)?;
+    Argon2::default().verify_password(user_input.password.as_bytes(), &parsed_hash)?;
 
-        let claims = Claims {
-            sub: user.id,
-            role: if user.is_admin == true {
-                "admin".to_owned()
-            } else {
-                "user".to_owned()
-            },
-            username: user.username.clone(),
-            iat: now.timestamp() as usize,
-            exp: exp.timestamp() as usize,
-        };
+    let now = Utc::now();
+    let exp = now + Duration::hours(24); // token valid for 24 hours
 
-        let token = encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret(jwt_secret),
-        )?;
+    let claims = Claims {
+        sub: user.id,
+        role: if user.is_admin == true {
+            "admin".to_owned()
+        } else {
+            "user".to_owned()
+        },
+        username: user.username.clone(),
+        iat: now.timestamp() as usize,
+        exp: exp.timestamp() as usize,
+    };
 
-        Ok(token)
-    } else {
-        Err(anyhow::anyhow!("User not found"))
-    }
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(jwt_secret),
+    )?;
+
+    Ok(token)
 }

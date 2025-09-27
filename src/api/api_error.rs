@@ -3,20 +3,90 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use lofty::error::LoftyError;
 use serde_json::json;
+use thiserror::Error;
+use tokio::task::JoinError;
 
-// Custom error type that can convert to HTTP responses
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ApiError {
-    InternalServerError(String),
+    #[error("Database error")]
+    Database(#[from] sqlx::Error),
+
+    #[error("Internal server error: {0}")]
+    Internal(String),
+
+    #[error("Bad request: {0}")]
     BadRequest(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("JWT error")]
+    JwtErr(#[from] jsonwebtoken::errors::Error),
+
+    #[error("Password hash error")]
+    PasswordErr(#[from] argon2::password_hash::Error),
+
+    #[error("Custom IO error: {0}")]
+    IOErrCustom(String),
+
+    #[error("IO error: {0}")]
+    IOErr(#[from] std::io::Error),
+
+    #[error("Join error: {0}")]
+    JoinErr(#[from] JoinError),
+
+    #[error("Walkdir error: {0}")]
+    WalkDirErr(#[from] walkdir::Error),
+
+    #[error("Lofty error: {0}")]
+    LoftyErr(#[from] LoftyError),
+
+    #[error("Serde Json: {0}")]
+    JsonErr(#[from] serde_json::Error),
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            ApiError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+        tracing::error!("API error: {:?}", self);
+
+        let (status, error_message) = match &self {
+            ApiError::Database(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            ),
+            ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
+            ApiError::JwtErr(_) => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid or expired token".to_string(),
+            ),
+            ApiError::PasswordErr(_) => {
+                (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
+            }
+            ApiError::IOErr(_e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Something went wrong when accessing your file system".to_string(),
+            ),
+            ApiError::IOErrCustom(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            ApiError::JoinErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while combining threads".to_string(),
+            ),
+            ApiError::WalkDirErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while reading files".to_string(),
+            ),
+            ApiError::LoftyErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while reading files".to_string(),
+            ),
+            ApiError::JsonErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while serialization".to_string(),
+            ),
         };
 
         let body = Json(json!({
@@ -24,14 +94,5 @@ impl IntoResponse for ApiError {
         }));
 
         (status, body).into_response()
-    }
-}
-
-impl<E> From<E> for ApiError
-where
-    E: std::error::Error,
-{
-    fn from(err: E) -> Self {
-        ApiError::InternalServerError(err.to_string())
     }
 }

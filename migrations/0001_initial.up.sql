@@ -53,6 +53,45 @@ CREATE TABLE IF NOT EXISTS progress (
     UNIQUE (user_id, book_id, file_id)
 );
 
+CREATE TABLE IF NOT EXISTS file_scan_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    library_id INTEGER DEFAULT 1, -- multiple libraries later
+    author TEXT, -- allow NULL in case we can't parse
+    title TEXT,
+    clean_title TEXT,
+    file_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    path_parent TEXT NOT NULL,
+    series TEXT,
+    clean_series TEXT,
+    dramatized BOOLEAN NOT NULL DEFAULT FALSE,
+    series_part INTEGER DEFAULT NULL, -- store series order if known
+    cover_art TEXT, -- path or URL to extracted cover
+    pub_year INTEGER,
+    narrated_by TEXT,
+    duration INTEGER DEFAULT 0, -- seconds
+    track_number INTEGER DEFAULT NULL, -- if multi-part file
+    disc_number INTEGER DEFAULT NULL, -- for multi-disc sets
+    file_size INTEGER DEFAULT 0, -- for streaming/buffering
+    mime_type TEXT, -- audio/mpeg, audio/m4b, etc.
+    channels INTEGER,
+    sample_rate INTEGER,
+    bitrate INTEGER,
+    extracts TEXT, -- extracts from series, author, title, filename as json
+    raw_metadata TEXT NOT NULL, -- store full JSON dump
+    resolve_status INTEGER,
+    hash TEXT, -- optional: for duplicate detection
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (file_path)
+);
+
+CREATE INDEX idx_files_author_title ON file_scan_cache (author, title);
+
+CREATE INDEX idx_files_series ON file_scan_cache (series);
+
+CREATE INDEX idx_files_hash ON file_scan_cache (hash);
+
 -- Create triggers for timestamps
 CREATE TRIGGER update_audiobooks_timestamp
 AFTER UPDATE ON audiobooks
