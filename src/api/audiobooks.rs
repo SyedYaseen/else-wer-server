@@ -69,36 +69,33 @@ pub async fn upload_handler(
     let mut f = File::create(&chunk_path).await.unwrap();
     f.write(&file_bytes).await.unwrap();
 
-    if chunk_index == total_chunks - 1 {
-        // Verify chunk count
-        let mut item_count = 0;
-        let mut entries = read_dir(&parts_dir).await.unwrap();
-        while let Ok(Some(_entry)) = entries.next_entry().await {
-            item_count += 1;
+    let mut item_count = 0;
+    let mut entries = read_dir(&parts_dir).await.unwrap();
+    while let Ok(Some(_entry)) = entries.next_entry().await {
+        item_count += 1;
+    }
+
+    if item_count == total_chunks {
+        let final_path = format!("{upload_dir}/{file_name}");
+        let mut output = fs::File::create(&final_path).await.unwrap();
+        for i in 0..total_chunks {
+            let chunk_path = format!("{parts_dir}/{i}");
+            let mut chunk_file = fs::File::open(&chunk_path).await.unwrap();
+            let mut buf = Vec::new();
+            chunk_file.read_to_end(&mut buf).await.unwrap();
+            output.write_all(&buf).await.unwrap();
         }
 
-        if item_count == total_chunks {
-            let final_path = format!("{upload_dir}/{file_name}");
-            let mut output = fs::File::create(&final_path).await.unwrap();
-            for i in 0..total_chunks {
-                let chunk_path = format!("{parts_dir}/{i}");
-                let mut chunk_file = fs::File::open(&chunk_path).await.unwrap();
-                let mut buf = Vec::new();
-                chunk_file.read_to_end(&mut buf).await.unwrap();
-                output.write_all(&buf).await.unwrap();
-            }
-
-            // cleanup
-            remove_dir_all(&parts_dir).await.unwrap();
-            println!("✅ File saved to {final_path}");
-            return Ok((
-                StatusCode::OK,
-                Json(json!({
-                    "index": chunk_index,
-                    "upload_complete": true
-                })),
-            ));
-        }
+        // cleanup
+        remove_dir_all(&parts_dir).await.unwrap();
+        println!("✅ File saved to {final_path}");
+        return Ok((
+            StatusCode::OK,
+            Json(json!({
+                "index": chunk_index,
+                "upload_complete": true
+            })),
+        ));
     }
 
     Ok((
