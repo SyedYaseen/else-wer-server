@@ -106,6 +106,12 @@ curl -X POST http://localhost:3000/api/create_user \
 -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8" \
 -d '{"username": "test1", "password": "mypassword", "is_admin": false}'
 
+curl -X POST http://localhost:3000/api/upload \
+-F "file=@chunk0.bin" \
+-F "fileName=test.bin" \
+-F "chunkIndex=0" \
+-F "totalChunks=3"
+
 
 ## Deploy notes
 Static build

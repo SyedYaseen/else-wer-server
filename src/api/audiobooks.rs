@@ -1,11 +1,13 @@
 use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::{get_grouped_files, scan_cache_count};
+use crate::file_ops::book_cover::cover_links;
 use crate::file_ops::org_books::save_organized_books;
 use crate::file_ops::{file_ops, scan_files::scan_files};
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
+use axum::extract::Multipart;
 use axum::http::HeaderMap;
 use axum::{
     Json,
@@ -15,16 +17,98 @@ use axum::{
     response::IntoResponse,
 };
 
+use lofty::io::Length;
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 
 use serde_json::json;
 use std::io::Write;
 use std::path::PathBuf;
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tokio::fs::{self, File, create_dir_all, read_dir, remove_dir_all};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
+
+pub async fn upload_handler(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, String> {
+    let mut file_name = None;
+    let mut chunk_index = None;
+    let mut total_chunks = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let upload_dir = "/home/yaseen/Projects/else-wer/else-wer-server/data/upload";
+
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap().to_string();
+        if name == "file" {
+            file_bytes = Some(field.bytes().await.unwrap().to_vec());
+        } else if name == "fileName" {
+            file_name = Some(field.text().await.unwrap());
+        } else if name == "chunkIndex" {
+            chunk_index = Some(field.text().await.unwrap().parse::<usize>().unwrap());
+        } else if name == "totalChunks" {
+            total_chunks = Some(field.text().await.unwrap().parse::<usize>().unwrap());
+        }
+    }
+
+    let file_name = file_name.ok_or("Missing fileName")?;
+    let chunk_index = chunk_index.ok_or("Missing chunkIndex")?;
+    let total_chunks = total_chunks.ok_or("Missing totalChunks")?;
+    let file_bytes = file_bytes.ok_or("Missing file data")?;
+
+    let parts_dir = format!("{upload_dir}/{file_name}.parts");
+    // Create temp dir per file
+    if chunk_index == 0 {
+        create_dir_all(&parts_dir).await.unwrap();
+    }
+
+    // Save chunk
+    let chunk_path = format!("{parts_dir}/{chunk_index}");
+    let mut f = File::create(&chunk_path).await.unwrap();
+    f.write(&file_bytes).await.unwrap();
+
+    if chunk_index == total_chunks - 1 {
+        // Verify chunk count
+        let mut item_count = 0;
+        let mut entries = read_dir(&parts_dir).await.unwrap();
+        while let Ok(Some(_entry)) = entries.next_entry().await {
+            item_count += 1;
+        }
+
+        if item_count == total_chunks {
+            let final_path = format!("{upload_dir}/{file_name}");
+            let mut output = fs::File::create(&final_path).await.unwrap();
+            for i in 0..total_chunks {
+                let chunk_path = format!("{parts_dir}/{i}");
+                let mut chunk_file = fs::File::open(&chunk_path).await.unwrap();
+                let mut buf = Vec::new();
+                chunk_file.read_to_end(&mut buf).await.unwrap();
+                output.write_all(&buf).await.unwrap();
+            }
+
+            // cleanup
+            remove_dir_all(&parts_dir).await.unwrap();
+            println!("✅ File saved to {final_path}");
+            return Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "index": chunk_index,
+                    "upload_complete": true
+                })),
+            ));
+        }
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "index": chunk_index,
+            "upload_complete": false
+        })),
+    ))
+}
 
 // Scan all audiobook files on local hard drive
 pub async fn scan_files_handler(
@@ -55,6 +139,7 @@ pub async fn list_scanned_files_handler(
 
     if scan_cache_count(db).await? == 0 {
         scan_files(path, db).await?;
+        cover_links(db).await?;
     }
     let grouped_files = get_grouped_files(db).await?;
 
@@ -67,7 +152,7 @@ pub async fn list_scanned_files_handler(
 }
 
 // Save organization made by user on their local audiofiles
-pub async fn save_oraganized_files_handler(
+pub async fn save_organized_files_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
     Json(payload): Json<Vec<ChangeDto>>,
@@ -82,6 +167,7 @@ pub async fn save_oraganized_files_handler(
     ))
 }
 
+// List audiobooks from AudioBooks table
 pub async fn list_books_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
@@ -101,6 +187,7 @@ pub async fn list_books_handler(
     }
 }
 
+// User downloads entire book
 pub async fn download_book(
     State(state): State<AppState>,
     Path(book_id): Path<i64>,
