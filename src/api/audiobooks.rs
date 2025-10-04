@@ -38,6 +38,7 @@ pub async fn upload_handler(
     let mut chunk_index = None;
     let mut total_chunks = None;
     let mut file_bytes: Option<Vec<u8>> = None;
+    let mut folder_path = None;
     let upload_dir = "/home/yaseen/Projects/else-wer/else-wer-server/data/upload";
 
     while let Some(field) = multipart.next_field().await.unwrap() {
@@ -50,6 +51,8 @@ pub async fn upload_handler(
             chunk_index = Some(field.text().await.unwrap().parse::<usize>().unwrap());
         } else if name == "totalChunks" {
             total_chunks = Some(field.text().await.unwrap().parse::<usize>().unwrap());
+        } else if name == "folderPath" {
+            folder_path = Some(field.text().await.unwrap());
         }
     }
 
@@ -57,6 +60,7 @@ pub async fn upload_handler(
     let chunk_index = chunk_index.ok_or("Missing chunkIndex")?;
     let total_chunks = total_chunks.ok_or("Missing totalChunks")?;
     let file_bytes = file_bytes.ok_or("Missing file data")?;
+    let folder_path = folder_path.ok_or("Missing fileName")?;
 
     let parts_dir = format!("{upload_dir}/{file_name}.parts");
     // Create temp dir per file
@@ -71,12 +75,17 @@ pub async fn upload_handler(
 
     let mut item_count = 0;
     let mut entries = read_dir(&parts_dir).await.unwrap();
+
     while let Ok(Some(_entry)) = entries.next_entry().await {
         item_count += 1;
     }
 
     if item_count == total_chunks {
-        let final_path = format!("{upload_dir}/{file_name}");
+        let target_folder = format!("{upload_dir}/{folder_path}");
+        create_dir_all(&target_folder).await.unwrap();
+
+        let final_path = format!("{target_folder}{file_name}");
+        println!("{final_path}");
         let mut output = fs::File::create(&final_path).await.unwrap();
         for i in 0..total_chunks {
             let chunk_path = format!("{parts_dir}/{i}");
