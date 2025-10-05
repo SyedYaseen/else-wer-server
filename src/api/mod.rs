@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     response::{Html, IntoResponse},
     routing::{get, post},
 };
@@ -16,7 +16,7 @@ use crate::{
     api::{
         audiobooks::{
             download_book, download_chunk, file_metadata, list_books_handler,
-            list_scanned_files_handler, save_oraganized_files_handler,
+            list_scanned_files_handler, save_organized_files_handler, upload_handler,
         },
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
@@ -30,10 +30,12 @@ pub async fn routes() -> Router<AppState> {
         .nest_service("/covers", ServeDir::new("covers"))
         .route("/hello", get(hello))
         // bookscan + edit
-        .route("/list_scanned_files", get(list_scanned_files_handler))
-        .route("/save_organized_files", post(save_oraganized_files_handler))
-        // Books
         .route("/scan_files", get(scan_files_handler))
+        .route("/list_scanned_files", get(list_scanned_files_handler))
+        .route("/save_organized_files", post(save_organized_files_handler))
+        // upload
+        .route("/upload", post(upload_handler))
+        // Books
         .route("/list_books", get(list_books_handler))
         // Files
         .route("/download_book/{book_id}", get(download_book))
@@ -49,6 +51,7 @@ pub async fn routes() -> Router<AppState> {
         // User
         .route("/create_user", post(create_user))
         .route("/login", post(login))
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 10))
 }
 
 async fn hello(State(_state): State<AppState>) -> impl IntoResponse {

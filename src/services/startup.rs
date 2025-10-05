@@ -67,13 +67,13 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<(), ApiError> {
 }
 
 pub async fn scan_files_startup(path_str: &String, db: &SqlitePool) -> Result<(), ApiError> {
-    info!("Scanning files on {}", path_str);
+    // info!("Scanning files on {}", path_str);
     // scan_for_audiobooks(path_str, db).await?;
     // scan_files(path_str, db).await?;
     // group_meta_fetch(db).await?;
     // cover_links(db).await?;
 
-    info!("Completed audiobooks file scan");
+    // info!("Completed audiobooks file scan");
     Ok(())
 }
 
