@@ -289,6 +289,7 @@ pub async fn apply_dbchanges(
 }
 
 pub async fn propagate_changes(pool: &SqlitePool) -> Result<(), ApiError> {
+    // TODO: Create query that also moves empty authors/ add in dumy authors
     sqlx::query(
         r#"
         INSERT INTO audiobooks (author, series, title, files_location, cover_art, metadata, duration, created_at, updated_at)

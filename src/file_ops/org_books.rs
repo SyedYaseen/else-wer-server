@@ -12,6 +12,12 @@ pub async fn save_organized_books(
     changes: Vec<ChangeDto>,
 ) -> Result<(), ApiError> {
     apply_dbchanges(db, changes.clone()).await?;
-    propagate_changes(db).await?; // TODO: verify if this affects files currently in progress
+    propagate_changes(db).await?;
+    Ok(())
+}
+
+// Save all books
+pub async fn init_books_from_file_scan_cache(db: &Pool<Sqlite>) -> Result<(), ApiError> {
+    propagate_changes(db).await?;
     Ok(())
 }

@@ -60,6 +60,26 @@ pub async fn update_audiobook_duration(
     Ok(())
 }
 
+pub async fn update_cover_art(
+    db: &Pool<Sqlite>,
+    book_id: i64,
+    cover_link: String,
+) -> Result<(), ApiError> {
+    sqlx::query!(
+        r#"
+        UPDATE audiobooks
+        SET cover_art = ?1
+        WHERE id = ?2
+        "#,
+        cover_link,
+        book_id
+    )
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn insert_file_metadata(
     db: &Pool<Sqlite>,
     create_data: &mut CreateFileMetadata,

@@ -11,8 +11,8 @@ use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
-    db::audiobooks::list_all_books,
-    models::audiobooks::{AudioBook, AudioBookRow},
+    db::audiobooks::{list_all_books, update_cover_art},
+    models::audiobooks::AudioBookRow,
 };
 
 pub async fn create_cover_link(
@@ -85,6 +85,9 @@ pub async fn cover_links(db: &SqlitePool) -> Result<(), ApiError> {
                         if let Some(ext) = &ext {
                             if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp") {
                                 let cover_art = create_cover_link(file.path(), ext, &book).await?;
+                                if let Some(cover_link) = cover_art {
+                                    update_cover_art(&db, book.id, cover_link).await?;
+                                }
                             }
                         }
                     }

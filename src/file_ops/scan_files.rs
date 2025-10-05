@@ -4,7 +4,10 @@ use walkdir::WalkDir;
 use crate::{
     api::api_error::ApiError,
     db::meta_scan::save_meta,
-    file_ops::meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
+    file_ops::{
+        book_cover::cover_links,
+        meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
+    },
     models::meta_scan::FileScanCache,
 };
 
@@ -187,7 +190,6 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError
             }
         }
     }
-
     // Second db scan and cleanup
     // grouped_meta_cleanup(db).await;
 

@@ -2,7 +2,7 @@ use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::{get_grouped_files, scan_cache_count};
 use crate::file_ops::book_cover::cover_links;
-use crate::file_ops::org_books::save_organized_books;
+use crate::file_ops::org_books::{init_books_from_file_scan_cache, save_organized_books};
 use crate::file_ops::{file_ops, scan_files::scan_files};
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
@@ -145,7 +145,6 @@ pub async fn list_scanned_files_handler(
 
     if scan_cache_count(db).await? == 0 {
         scan_files(path, db).await?;
-        cover_links(db).await?;
     }
     let grouped_files = get_grouped_files(db).await?;
 
@@ -165,6 +164,22 @@ pub async fn save_organized_files_handler(
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
     let _ = save_organized_books(db, payload).await;
+    cover_links(db).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "message": "Confirmed entry",
+        })),
+    ))
+}
+
+pub async fn init_books_from_file_scan_cache_handler(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    let _ = init_books_from_file_scan_cache(db).await;
+    cover_links(db).await?;
     Ok((
         StatusCode::OK,
         Json(json!({
@@ -199,7 +214,7 @@ pub async fn download_book(
     Path(book_id): Path<i64>,
     AuthUser(_claims): AuthUser,
 ) -> impl IntoResponse {
-    let files = match get_file_metadata(&state.db_pool, book_id).await {
+    let files = match file_metadata(&state.db_pool, book_id).await {
         Ok(f) => f,
         Err(_) => {
             return (
@@ -307,17 +322,15 @@ pub async fn download_chunk(
     ))
 }
 
-pub async fn file_metadata(
+pub async fn file_metadata_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
     Path(book_id): Path<i64>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let files = get_file_metadata(&state.db_pool, book_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Error scanning files: {}", e);
-            ApiError::Internal("Failed to scan audiobooks".to_string())
-        })?;
+    let files = file_metadata(&state.db_pool, book_id).await.map_err(|e| {
+        tracing::error!("Error scanning files: {}", e);
+        ApiError::Internal("Failed to scan audiobooks".to_string())
+    })?;
 
     Ok(Json(json!({
         "message": "",
@@ -326,7 +339,7 @@ pub async fn file_metadata(
     })))
 }
 
-async fn get_file_metadata(db: &Pool<Sqlite>, book_id: i64) -> anyhow::Result<Vec<FileMetadata>> {
+async fn file_metadata(db: &Pool<Sqlite>, book_id: i64) -> anyhow::Result<Vec<FileMetadata>> {
     let files = get_files_by_book_id(db, book_id).await.map_err(|e| {
         eprintln!("Error retrieving files from db: {e}");
         anyhow::anyhow!(e)
