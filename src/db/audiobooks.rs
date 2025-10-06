@@ -188,7 +188,7 @@ pub async fn get_file_path(db: &Pool<Sqlite>, file_id: i64) -> Result<String, Ap
         SELECT
             file_path
         FROM files
-        WHERE id = ?
+        WHERE file_id = ?
         ORDER BY id
         "#,
     )
