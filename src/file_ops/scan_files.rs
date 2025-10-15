@@ -1,14 +1,19 @@
+use futures::{StreamExt, stream};
 use std::{
     collections::{HashSet, hash_set},
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
+    sync::{Arc, RwLock},
 };
 use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
-    db::meta_scan::{add_modify_audiobook_files, fetch_stage_by_parent_path, save_stage_metadata},
+    db::meta_scan::{
+        add_modify_audiobook_files, delete_removed_paths_from_cache, fetch_all_stage_file_paths,
+        fetch_stage_by_parent_path, save_stage_metadata,
+    },
     file_ops::{
         book_cover::cover_links,
         meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
@@ -160,7 +165,7 @@ async fn create_metadata(fpath: &Path) -> FileScanCache {
     metadata
 }
 
-pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError> {
+pub async fn testscan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError> {
     let mut count = 0;
     for entry in WalkDir::new(path_str).contents_first(true) {
         if let Ok(item) = entry {
@@ -207,63 +212,77 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError
     Ok(count)
 }
 
-pub async fn testscan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError> {
-    let mut count = 0;
-    let mut parent_path: Option<PathBuf> = None;
-    let mut scan_cache: HashSet<String> = vec![].into_iter().collect();
-    for entry in WalkDir::new(path_str).contents_first(true) {
-        if let Ok(item) = entry {
-            if item.file_type().is_file() {
-                let fpath = item.path();
+pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u32, ApiError> {
+    let scan_cache = Arc::new(RwLock::new(fetch_all_stage_file_paths(db).await?));
 
-                // Skip if unsupported ftype
-                match fpath
+    let paths: Vec<PathBuf> = WalkDir::new(path_str)
+        .contents_first(true)
+        .into_iter()
+        .filter_map(|f| f.ok())
+        .filter(|f| f.file_type().is_file())
+        .map(|f| f.path().to_owned())
+        .collect();
+
+    let results = stream::iter(paths)
+        .map(|p| {
+            let db = db.clone();
+            let cache = Arc::clone(&scan_cache);
+            tokio::spawn(async move {
+                let ext = p
                     .extension()
-                    .and_then(|f| f.to_str())
-                    .map(|f| f.to_lowercase())
-                {
-                    Some(ext) if matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") => ext,
-                    _ => continue, // Skip if no valid extension
-                };
+                    .and_then(|e| e.to_str())
+                    .map(|ext| ext.to_lowercase());
 
-                // Skip if already scanned
-                if let Some(parent) = fpath.parent() {
-                    if parent_path.as_deref() != Some(parent) {
-                        parent_path = Some(parent.to_path_buf());
-                        scan_cache = fetch_stage_by_parent_path(db, parent).await?;
-                    }
+                if !matches!(ext.as_deref(), Some("mp3" | "m4b" | "flac" | "m4a")) {
+                    return Ok(0);
                 }
 
-                if let Some(fpath_str) = fpath.to_str() {
-                    if scan_cache.contains(fpath_str) {
-                        continue;
+                if let Some(fp) = p.to_str() {
+                    let read_cache = cache.read().unwrap();
+                    if read_cache.contains(fp) {
+                        drop(read_cache);
+                        let mut write_cache = cache.write().unwrap();
+                        write_cache.remove(fp);
+                        return Ok(0);
                     }
-                } else {
-                    continue; // skip non-UTF8 paths
                 }
-
-                // Proceed, if previously unscanned.
-                let mut metadata = create_metadata(&fpath).await;
-                println!("{:#?}", metadata);
+                let mut metadata = create_metadata(&p).await;
                 if let Err(e) = extract_metadata(&mut metadata).await {
-                    tracing::error!("Failed to extract metadata {} | {}.", fpath.display(), e);
+                    tracing::error!("Failed to extract metadata {} | {}.", p.display(), e);
                 }
 
                 meta_cleanup(&mut metadata);
-                if let Err(e) = save_stage_metadata(db, metadata).await {
+                if let Err(e) = save_stage_metadata(&db, metadata).await {
                     tracing::error!("Failed to save {}", e);
                 }
 
-                if let Err(e) = add_modify_audiobook_files(db).await {
+                if let Err(e) = add_modify_audiobook_files(&db).await {
                     tracing::error!("Failed to update row on server database {}", e);
                 }
-                count += 1;
-            }
+
+                Ok::<u32, ApiError>(1)
+            })
+        })
+        .buffer_unordered(10) // limits to 10 concurrent tasks
+        .collect::<Vec<_>>()
+        .await;
+
+    let paths_to_delete: Vec<String> = {
+        let cache = scan_cache.read().unwrap();
+        cache.iter().map(|s| s.to_string()).collect()
+    };
+    println!("Rows to delete: { :#? }", paths_to_delete);
+    if !paths_to_delete.is_empty() {
+        let rows_deleted = delete_removed_paths_from_cache(db, &paths_to_delete).await?;
+        println!("Rows deleted: { :#? }", rows_deleted);
+    }
+    // Count successful ones
+    let mut count = 0;
+    for res in results {
+        if let Ok(Ok(success)) = res {
+            count += success;
         }
     }
 
-    let _ = cover_links(db).await.inspect_err(|e| {
-        tracing::error!("Failed to get cover for {}", e);
-    });
     Ok(count)
 }

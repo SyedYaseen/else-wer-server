@@ -2,7 +2,8 @@ use crate::{
     api::api_error::ApiError,
     models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache},
 };
-use sqlx::{Pool, QueryBuilder, Sqlite, SqlitePool};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqlitePool};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
@@ -21,25 +22,73 @@ pub async fn stage_metadata_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
     Ok(row.count)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct FileScanCacheFilePaths {
+    pub id: i64,
+    pub file_path: String,
+}
+
 pub async fn fetch_stage_by_parent_path(
     db: &Pool<Sqlite>,
     parent_path: &Path,
 ) -> Result<HashSet<String>, ApiError> {
     let parent_path_str = parent_path.to_string_lossy();
 
-    let rows = sqlx::query_as::<_, FileScanCache>(
+    let rows = sqlx::query_as::<_, FileScanCacheFilePaths>(
         r#"
-        SELECT file_path 
+        SELECT id, file_path 
         FROM file_scan_cache
         WHERE path_parent = ?
         "#,
     )
     .bind(parent_path_str)
     .fetch_all(db)
+    .await
+    .unwrap();
+
+    let items: HashSet<String> = rows.into_iter().map(|r| r.file_path).collect();
+    Ok(items)
+}
+
+pub async fn fetch_all_stage_file_paths(db: &Pool<Sqlite>) -> Result<HashSet<String>, ApiError> {
+    let rows = sqlx::query_as::<_, FileScanCacheFilePaths>(
+        r#"
+        SELECT id, file_path 
+        FROM file_scan_cache
+        "#,
+    )
+    .fetch_all(db)
     .await?;
 
     let items: HashSet<String> = rows.into_iter().map(|r| r.file_path).collect();
     Ok(items)
+}
+
+pub async fn delete_removed_paths_from_cache(
+    db: &Pool<Sqlite>,
+    parent_paths: &[String],
+) -> Result<u64, ApiError> {
+    if parent_paths.is_empty() {
+        return Ok(0);
+    }
+
+    let placeholders = std::iter::repeat("?")
+        .take(parent_paths.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let query = format!(
+        "DELETE FROM file_scan_cache WHERE file_path IN ({})",
+        placeholders
+    );
+
+    let mut q = sqlx::query(&query);
+    for path in parent_paths {
+        q = q.bind(path);
+    }
+
+    let result = q.execute(db).await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn save_stage_metadata(
