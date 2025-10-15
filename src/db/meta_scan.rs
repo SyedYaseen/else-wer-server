@@ -3,9 +3,12 @@ use crate::{
     models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache},
 };
 use sqlx::{Pool, QueryBuilder, Sqlite, SqlitePool};
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
-pub async fn scan_cache_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
+pub async fn stage_metadata_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
     let row = sqlx::query!(
         r#"
         SELECT COUNT(id) as count
@@ -18,7 +21,90 @@ pub async fn scan_cache_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
     Ok(row.count)
 }
 
-pub async fn save_meta(db: &Pool<Sqlite>, metadata: FileScanCache) -> Result<(), ApiError> {
+pub async fn fetch_stage_by_parent_path(
+    db: &Pool<Sqlite>,
+    parent_path: &Path,
+) -> Result<HashSet<String>, ApiError> {
+    let parent_path_str = parent_path.to_string_lossy();
+
+    let rows = sqlx::query_as::<_, FileScanCache>(
+        r#"
+        SELECT file_path 
+        FROM file_scan_cache
+        WHERE path_parent = ?
+        "#,
+    )
+    .bind(parent_path_str)
+    .fetch_all(db)
+    .await?;
+
+    let items: HashSet<String> = rows.into_iter().map(|r| r.file_path).collect();
+    Ok(items)
+}
+
+pub async fn save_stage_metadata(
+    db: &Pool<Sqlite>,
+    metadata: FileScanCache,
+) -> Result<u64, ApiError> {
+    let resolve_status = metadata.resolve_status.value();
+    let rawmet = "".to_owned();
+    let save_res = sqlx::query!(
+        r#"
+            INSERT INTO file_scan_cache (
+                author, title, clean_title, file_path, file_name, path_parent, series, clean_series, series_part, 
+                cover_art, pub_year, narrated_by, duration, track_number, 
+                disc_number, file_size, mime_type, channels, sample_rate, 
+                bitrate, dramatized, extracts,  raw_metadata, resolve_status, hash
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 
+                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+            )
+            "#,
+        metadata.author,
+        metadata.title,
+        metadata.clean_title,
+        metadata.file_path,
+        metadata.file_name,
+        metadata.path_parent,
+        metadata.series,
+        metadata.clean_series,
+        metadata.series_part,
+        metadata.cover_art,
+        metadata.pub_year,
+        metadata.narrated_by,
+        metadata.duration,
+        metadata.track_number,
+        metadata.disc_number,
+        metadata.file_size,
+        metadata.mime_type,
+        metadata.channels,
+        metadata.sample_rate,
+        metadata.bitrate,
+        metadata.dramatized,
+        metadata.extracts,
+        rawmet, //metadata.raw_metadata,
+        resolve_status,
+        metadata.hash
+    )
+    .execute(db)
+    .await;
+
+    match save_res {
+        Ok(res) => {
+            tracing::info!("Saved {} files to database", res.rows_affected());
+            Ok(res.rows_affected())
+        }
+        Err(e) => {
+            tracing::error!("Failed to save {}", e);
+            Err(ApiError::Database(e))
+        }
+    }
+}
+
+pub async fn update_cache_metadata(
+    db: &Pool<Sqlite>,
+    metadata: FileScanCache,
+) -> Result<(), ApiError> {
     let resolve_status = metadata.resolve_status.value();
     let rawmet = "".to_owned();
     let save_res = sqlx::query!(
@@ -188,7 +274,7 @@ pub async fn get_grouped_files(
     Ok(result)
 }
 
-pub async fn apply_dbchanges(
+pub async fn save_user_file_org_changes_filescan_cache(
     pool: &SqlitePool,
     changes: Vec<ChangeDto>,
 ) -> Result<(), sqlx::Error> {
@@ -288,7 +374,7 @@ pub async fn apply_dbchanges(
     Ok(())
 }
 
-pub async fn propagate_changes(pool: &SqlitePool) -> Result<(), ApiError> {
+pub async fn add_modify_audiobook_files(pool: &SqlitePool) -> Result<(), ApiError> {
     // TODO: Create query that also moves empty authors/ add in dumy authors
     sqlx::query(
         r#"

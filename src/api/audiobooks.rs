@@ -1,9 +1,9 @@
 use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
-use crate::db::meta_scan::{get_grouped_files, scan_cache_count};
+use crate::db::meta_scan::{get_grouped_files, stage_metadata_count};
 use crate::file_ops::book_cover::cover_links;
 use crate::file_ops::org_books::{init_books_from_file_scan_cache, save_organized_books};
-use crate::file_ops::{file_ops, scan_files::scan_files};
+use crate::file_ops::scan_files::scan_files;
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
@@ -17,7 +17,6 @@ use axum::{
     response::IntoResponse,
 };
 
-use lofty::io::Length;
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 
@@ -143,7 +142,7 @@ pub async fn list_scanned_files_handler(
     let path = &state.config.book_files;
     let db = &state.db_pool;
 
-    if scan_cache_count(db).await? == 0 {
+    if stage_metadata_count(db).await? == 0 {
         scan_files(path, db).await?;
     }
     let grouped_files = get_grouped_files(db).await?;

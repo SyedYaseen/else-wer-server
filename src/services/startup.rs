@@ -1,12 +1,7 @@
 use crate::api::api_error::ApiError;
 use crate::api::user::save_pwd_hash;
-use crate::db::meta_scan::get_grouped_files;
 use crate::db::user::admin_exists;
-use crate::file_ops::book_cover::{cover_links, create_cover_link};
-use crate::file_ops::file_ops::scan_for_audiobooks;
-use crate::file_ops::scan_files::scan_files;
 use crate::models::user::UserDto;
-use axum::extract::path;
 use sqlx::sqlite::SqlitePool;
 use tracing::info;
 use tracing_appender::rolling::{self};

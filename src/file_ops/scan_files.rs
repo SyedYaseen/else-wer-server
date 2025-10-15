@@ -1,9 +1,14 @@
-use std::{fs::File, io::BufReader, path::Path};
+use std::{
+    collections::{HashSet, hash_set},
+    fs::File,
+    io::BufReader,
+    path::{Path, PathBuf},
+};
 use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
-    db::meta_scan::save_meta,
+    db::meta_scan::{add_modify_audiobook_files, fetch_stage_by_parent_path, save_stage_metadata},
     file_ops::{
         book_cover::cover_links,
         meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
@@ -162,19 +167,14 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError
             if item.file_type().is_file() {
                 let fpath = item.path();
 
-                let ext = fpath
+                match fpath
                     .extension()
                     .and_then(|f| f.to_str())
-                    .map(|f| f.to_lowercase());
-
-                // Skip execution if file isnt a valid format
-                if let Some(ext) = &ext {
-                    if !matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") {
-                        continue;
-                    }
-                } else {
-                    continue; // Skip if no extension present
-                }
+                    .map(|f| f.to_lowercase())
+                {
+                    Some(ext) if matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") => ext,
+                    _ => continue, // Skip if no valid extension
+                };
 
                 let mut metadata = create_metadata(&fpath).await;
 
@@ -183,18 +183,87 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError
                 }
 
                 meta_cleanup(&mut metadata);
-                if let Err(e) = save_meta(db, metadata).await {
+                if let Err(e) = save_stage_metadata(db, metadata).await {
                     tracing::error!("Failed to save {}", e);
+                }
+
+                if let Err(e) = add_modify_audiobook_files(db).await {
+                    tracing::error!("Failed to update row on server database {}", e);
                 }
                 count += 1;
             }
         }
     }
+
+    let _ = cover_links(db).await.inspect_err(|e| {
+        tracing::error!("Failed to get cover for {}", e);
+    });
     // Second db scan and cleanup
     // grouped_meta_cleanup(db).await;
 
     // capture the file name to look for clues on order of file
 
     // Cross referece the parents, grandparents to check for clues of series name or author name to verify
+    Ok(count)
+}
+
+pub async fn testscan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError> {
+    let mut count = 0;
+    let mut parent_path: Option<PathBuf> = None;
+    let mut scan_cache: HashSet<String> = vec![].into_iter().collect();
+    for entry in WalkDir::new(path_str).contents_first(true) {
+        if let Ok(item) = entry {
+            if item.file_type().is_file() {
+                let fpath = item.path();
+
+                // Skip if unsupported ftype
+                match fpath
+                    .extension()
+                    .and_then(|f| f.to_str())
+                    .map(|f| f.to_lowercase())
+                {
+                    Some(ext) if matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") => ext,
+                    _ => continue, // Skip if no valid extension
+                };
+
+                // Skip if already scanned
+                if let Some(parent) = fpath.parent() {
+                    if parent_path.as_deref() != Some(parent) {
+                        parent_path = Some(parent.to_path_buf());
+                        scan_cache = fetch_stage_by_parent_path(db, parent).await?;
+                    }
+                }
+
+                if let Some(fpath_str) = fpath.to_str() {
+                    if scan_cache.contains(fpath_str) {
+                        continue;
+                    }
+                } else {
+                    continue; // skip non-UTF8 paths
+                }
+
+                // Proceed, if previously unscanned.
+                let mut metadata = create_metadata(&fpath).await;
+                println!("{:#?}", metadata);
+                if let Err(e) = extract_metadata(&mut metadata).await {
+                    tracing::error!("Failed to extract metadata {} | {}.", fpath.display(), e);
+                }
+
+                meta_cleanup(&mut metadata);
+                if let Err(e) = save_stage_metadata(db, metadata).await {
+                    tracing::error!("Failed to save {}", e);
+                }
+
+                if let Err(e) = add_modify_audiobook_files(db).await {
+                    tracing::error!("Failed to update row on server database {}", e);
+                }
+                count += 1;
+            }
+        }
+    }
+
+    let _ = cover_links(db).await.inspect_err(|e| {
+        tracing::error!("Failed to get cover for {}", e);
+    });
     Ok(count)
 }
