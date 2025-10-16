@@ -426,102 +426,61 @@ pub async fn get_grouped_files(
     Ok(result)
 }
 
+// fn bind_ids<'a>(qb: &'a mut QueryBuilder<'a, sqlx::Sqlite>, file_ids: &'a Vec<i64>) {
+//     qb.push(" WHERE id IN (");
+//     let mut separated = qb.separated(", ");
+//     for id in file_ids {
+//         separated.push_bind(id);
+//     }
+//     separated.push_unseparated(")");
+// }
+
+fn bind_ids<'a>(
+    mut qb: QueryBuilder<'a, sqlx::Sqlite>,
+    id_name: &str,
+    file_ids: &'a Vec<i64>,
+) -> QueryBuilder<'a, sqlx::Sqlite> {
+    qb.push(format!(" WHERE {id_name} IN ("));
+
+    let mut separated = qb.separated(", ");
+    for id in file_ids {
+        separated.push_bind(id);
+    }
+
+    qb.push(")");
+    qb
+}
+
 pub async fn save_user_file_org_changes_filescan_cache(
     pool: &SqlitePool,
     changes: Vec<ChangeDto>,
 ) -> Result<(), sqlx::Error> {
+    let q: &'static str = "UPDATE file_scan_cache SET resolve_status = 2,";
     for change in changes {
-        match change.change_type {
-            ChangeType::Rename => {
-                if let Some(new_title) = change.new_filetitle {
-                    let mut qb: QueryBuilder<sqlx::Sqlite> =
-                        QueryBuilder::new("UPDATE file_scan_cache SET clean_series = ");
-                    qb.push_bind(new_title).push(" WHERE id IN (");
+        let mut qb = QueryBuilder::new(q);
+        let mut set_parts: Vec<(&'static str, String)> = Vec::new();
 
-                    let mut separated = qb.separated(", ");
-                    for id in &change.file_ids {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-                    qb.build().execute(pool).await?;
-                }
-            }
-
-            ChangeType::MoveTitle => {
-                if let Some(new_author) = change.new_author {
-                    let mut qb: QueryBuilder<sqlx::Sqlite> =
-                        QueryBuilder::new("UPDATE file_scan_cache SET author = ");
-                    qb.push_bind(new_author).push(" WHERE id IN (");
-
-                    let mut separated = qb.separated(", ");
-                    for id in &change.file_ids {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-                    qb.build().execute(pool).await?;
-                }
-            }
-
-            ChangeType::MergeTitle => {
-                if let Some(new_author) = change.new_author {
-                    let mut qb: QueryBuilder<sqlx::Sqlite> =
-                        QueryBuilder::new("UPDATE file_scan_cache SET author = ");
-                    qb.push_bind(new_author).push(" WHERE id IN (");
-
-                    let mut separated = qb.separated(", ");
-                    for id in &change.file_ids {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-                    qb.build().execute(pool).await?;
-                }
-
-                if let Some(new_series) = change.new_series {
-                    let mut qb: QueryBuilder<sqlx::Sqlite> =
-                        QueryBuilder::new("UPDATE file_scan_cache SET clean_series = ");
-                    qb.push_bind(new_series).push(" WHERE id IN (");
-
-                    let mut separated = qb.separated(", ");
-                    for id in &change.file_ids {
-                        separated.push_bind(id);
-                    }
-                    separated.push_unseparated(")");
-                    qb.build().execute(pool).await?;
-                }
-            }
-
-            ChangeType::FileMove => {
-                // This is like moving files under a new series/author
-                let mut qb: QueryBuilder<sqlx::Sqlite> =
-                    QueryBuilder::new("UPDATE file_scan_cache SET ");
-                let mut set_parts = Vec::new();
-
-                if let Some(new_author) = change.new_author {
-                    set_parts.push(("author", new_author));
-                }
-                if let Some(new_series) = change.new_series {
-                    set_parts.push(("clean_series", new_series));
-                }
-                if let Some(new_filetitle) = change.new_filetitle {
-                    set_parts.push(("title", new_filetitle));
-                }
-
-                for (i, (field, value)) in set_parts.into_iter().enumerate() {
-                    if i > 0 {
-                        qb.push(", ");
-                    }
-                    qb.push(field).push(" = ").push_bind(value);
-                }
-
-                qb.push(" WHERE id IN (");
-                let mut separated = qb.separated(", ");
-                for id in &change.file_ids {
-                    separated.push_bind(id);
-                }
-                separated.push_unseparated(")");
-                qb.build().execute(pool).await?;
-            }
+        if let Some(new_author) = change.new_author {
+            set_parts.push(("author", new_author));
         }
+
+        if let Some(new_file_title) = change.new_filetitle {
+            set_parts.push(("file_name", new_file_title));
+        }
+
+        if let Some(new_series) = change.new_series {
+            set_parts.push(("clean_series", new_series));
+        }
+
+        for (i, (field, value)) in set_parts.into_iter().enumerate() {
+            if i > 0 {
+                qb.push(", ");
+            }
+            qb.push(field).push(" = ").push_bind(value);
+        }
+
+        qb = bind_ids(qb, "id", &change.file_ids);
+        qb.build().execute(pool).await?;
     }
     Ok(())
 }
@@ -542,7 +501,7 @@ pub async fn add_modify_audiobook_files(pool: &SqlitePool) -> Result<(), ApiErro
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
         FROM file_scan_cache fsc
-        WHERE fsc.resolve_status = 0 and fsc.author IS NOT NULL and fsc.clean_series is not null
+        WHERE fsc.resolve_status = 2 and fsc.author IS NOT NULL and fsc.clean_series is not null
         ON CONFLICT(author, title) DO UPDATE SET
             series = excluded.series,
             files_location = excluded.files_location,
@@ -573,7 +532,7 @@ pub async fn add_modify_audiobook_files(pool: &SqlitePool) -> Result<(), ApiErro
             JOIN audiobooks ab ON ab.author = fsc.author
             AND ab.title = fsc.clean_series
         WHERE
-            fsc.resolve_status = 0
+            fsc.resolve_status = 2
         ON CONFLICT(book_id, file_id, file_path) DO UPDATE SET
             file_name = excluded.file_name,
             file_path = excluded.file_path,

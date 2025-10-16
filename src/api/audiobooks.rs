@@ -170,7 +170,7 @@ pub async fn save_organized_files_handler(
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
     let _ = save_organized_books(db, payload).await;
-    cover_links(db).await?;
+    // cover_links(db).await?;
     Ok((
         StatusCode::OK,
         Json(json!({
