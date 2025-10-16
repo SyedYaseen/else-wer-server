@@ -3,8 +3,9 @@ use std::{
     collections::{HashSet, hash_set},
     fs::File,
     io::BufReader,
+    mem::take,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 use walkdir::WalkDir;
 
@@ -12,7 +13,7 @@ use crate::{
     api::api_error::ApiError,
     db::meta_scan::{
         add_modify_audiobook_files, delete_removed_paths_from_cache, fetch_all_stage_file_paths,
-        fetch_stage_by_parent_path, save_stage_metadata,
+        save_metadata_to_cache, sync_disk_db_state,
     },
     file_ops::{
         book_cover::cover_links,
@@ -29,7 +30,7 @@ use lofty::{
 };
 
 use sqlx::SqlitePool;
-use tokio::fs;
+use tokio::{fs, sync::RwLock};
 
 pub async fn extract_besttag(tags: &[Tag]) -> Option<&Tag> {
     let priority = [
@@ -188,13 +189,13 @@ pub async fn testscan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiE
                 }
 
                 meta_cleanup(&mut metadata);
-                if let Err(e) = save_stage_metadata(db, metadata).await {
-                    tracing::error!("Failed to save {}", e);
-                }
+                // if let Err(e) = save_stage_metadata(db, metadata).await {
+                //     tracing::error!("Failed to save {}", e);
+                // }
 
-                if let Err(e) = add_modify_audiobook_files(db).await {
-                    tracing::error!("Failed to update row on server database {}", e);
-                }
+                // if let Err(e) = add_modify_audiobook_files(db).await {
+                //     tracing::error!("Failed to update row on server database {}", e);
+                // }
                 count += 1;
             }
         }
@@ -212,21 +213,25 @@ pub async fn testscan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiE
     Ok(count)
 }
 
-pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u32, ApiError> {
-    let scan_cache = Arc::new(RwLock::new(fetch_all_stage_file_paths(db).await?));
-
-    let paths: Vec<PathBuf> = WalkDir::new(path_str)
+async fn capture_file_paths(path_str: &str) -> Vec<PathBuf> {
+    WalkDir::new(path_str)
         .contents_first(true)
         .into_iter()
         .filter_map(|f| f.ok())
         .filter(|f| f.file_type().is_file())
         .map(|f| f.path().to_owned())
-        .collect();
+        .collect()
+}
 
-    let results = stream::iter(paths)
+pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError> {
+    let scan_cache = Arc::new(RwLock::new(fetch_all_stage_file_paths(db).await?));
+    let fsc_metadatas: Arc<RwLock<Vec<FileScanCache>>> = Arc::new(RwLock::new(Vec::new()));
+    let paths = capture_file_paths(path_str).await;
+
+    stream::iter(paths)
         .map(|p| {
-            let db = db.clone();
             let cache = Arc::clone(&scan_cache);
+            let metadata_list = Arc::clone(&fsc_metadatas);
             tokio::spawn(async move {
                 let ext = p
                     .extension()
@@ -238,10 +243,10 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u32, ApiError
                 }
 
                 if let Some(fp) = p.to_str() {
-                    let read_cache = cache.read().unwrap();
-                    if read_cache.contains(fp) {
+                    let read_cache = cache.read().await;
+                    if read_cache.contains_key(fp) {
                         drop(read_cache);
-                        let mut write_cache = cache.write().unwrap();
+                        let mut write_cache = cache.write().await;
                         write_cache.remove(fp);
                         return Ok(0);
                     }
@@ -252,13 +257,9 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u32, ApiError
                 }
 
                 meta_cleanup(&mut metadata);
-                if let Err(e) = save_stage_metadata(&db, metadata).await {
-                    tracing::error!("Failed to save {}", e);
-                }
 
-                if let Err(e) = add_modify_audiobook_files(&db).await {
-                    tracing::error!("Failed to update row on server database {}", e);
-                }
+                let mut metadata_write = metadata_list.write().await;
+                metadata_write.push(metadata.clone());
 
                 Ok::<u32, ApiError>(1)
             })
@@ -267,21 +268,27 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u32, ApiError
         .collect::<Vec<_>>()
         .await;
 
-    let paths_to_delete: Vec<String> = {
-        let cache = scan_cache.read().unwrap();
-        cache.iter().map(|s| s.to_string()).collect()
+    let paths_to_delete: Vec<i64> = {
+        let cache = scan_cache.read().await;
+        cache.values().cloned().collect()
     };
-    println!("Rows to delete: { :#? }", paths_to_delete);
+
     if !paths_to_delete.is_empty() {
         let rows_deleted = delete_removed_paths_from_cache(db, &paths_to_delete).await?;
         println!("Rows deleted: { :#? }", rows_deleted);
     }
-    // Count successful ones
+
+    let metadatas = {
+        let mut guard = fsc_metadatas.write().await;
+        let metadatas = take(&mut *guard);
+        drop(guard);
+        println!("Rows to insert: {}", metadatas.len());
+        metadatas
+    };
+
     let mut count = 0;
-    for res in results {
-        if let Ok(Ok(success)) = res {
-            count += success;
-        }
+    if !metadatas.is_empty() {
+        count = sync_disk_db_state(db, metadatas).await.unwrap();
     }
 
     Ok(count)

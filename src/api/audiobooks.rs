@@ -1,6 +1,6 @@
 use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
-use crate::db::meta_scan::{get_grouped_files, stage_metadata_count};
+use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
 use crate::file_ops::org_books::{init_books_from_file_scan_cache, save_organized_books};
 use crate::file_ops::scan_files::scan_files;
@@ -32,13 +32,15 @@ pub async fn upload_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
     mut multipart: Multipart,
-) -> Result<impl IntoResponse, String> {
+) -> Result<impl IntoResponse, ApiError> {
     let mut file_name = None;
     let mut chunk_index = None;
     let mut total_chunks = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut folder_path = None;
-    let upload_dir = "/home/yaseen/Projects/else-wer/else-wer-server/data/upload";
+
+    let upload_dir = &state.config.audiobook_location;
+    let db = &state.db_pool;
 
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
@@ -55,25 +57,26 @@ pub async fn upload_handler(
         }
     }
 
-    let file_name = file_name.ok_or("Missing fileName")?;
-    let chunk_index = chunk_index.ok_or("Missing chunkIndex")?;
-    let total_chunks = total_chunks.ok_or("Missing totalChunks")?;
-    let file_bytes = file_bytes.ok_or("Missing file data")?;
-    let folder_path = folder_path.ok_or("Missing fileName")?;
+    let file_name = file_name.ok_or(ApiError::BadRequest("Missing fileName".to_owned()))?;
+    let chunk_index = chunk_index.ok_or(ApiError::BadRequest("Missing chunkIndex".to_owned()))?;
+    let total_chunks =
+        total_chunks.ok_or(ApiError::BadRequest("Missing totalChunks".to_owned()))?;
+    let file_bytes = file_bytes.ok_or(ApiError::BadRequest("Missing file data".to_owned()))?;
+    let folder_path = folder_path.ok_or(ApiError::BadRequest("Missing fileName".to_owned()))?;
 
     let parts_dir = format!("{upload_dir}/{file_name}.parts");
     // Create temp dir per file
     if chunk_index == 0 {
-        create_dir_all(&parts_dir).await.unwrap();
+        create_dir_all(&parts_dir).await?;
     }
 
     // Save chunk
     let chunk_path = format!("{parts_dir}/{chunk_index}");
-    let mut f = File::create(&chunk_path).await.unwrap();
-    f.write(&file_bytes).await.unwrap();
+    let mut f = File::create(&chunk_path).await?;
+    f.write(&file_bytes).await?;
 
     let mut item_count = 0;
-    let mut entries = read_dir(&parts_dir).await.unwrap();
+    let mut entries = read_dir(&parts_dir).await?;
 
     while let Ok(Some(_entry)) = entries.next_entry().await {
         item_count += 1;
@@ -81,27 +84,30 @@ pub async fn upload_handler(
 
     if item_count == total_chunks {
         let target_folder = format!("{upload_dir}/{folder_path}");
-        create_dir_all(&target_folder).await.unwrap();
+        create_dir_all(&target_folder).await?;
 
         let final_path = format!("{target_folder}{file_name}");
         println!("{final_path}");
-        let mut output = fs::File::create(&final_path).await.unwrap();
+        let mut output = fs::File::create(&final_path).await?;
         for i in 0..total_chunks {
             let chunk_path = format!("{parts_dir}/{i}");
-            let mut chunk_file = fs::File::open(&chunk_path).await.unwrap();
+            let mut chunk_file = fs::File::open(&chunk_path).await?;
             let mut buf = Vec::new();
-            chunk_file.read_to_end(&mut buf).await.unwrap();
-            output.write_all(&buf).await.unwrap();
+            chunk_file.read_to_end(&mut buf).await?;
+            output.write_all(&buf).await?;
         }
 
         // cleanup
-        remove_dir_all(&parts_dir).await.unwrap();
+        remove_dir_all(&parts_dir).await?;
         println!("✅ File saved to {final_path}");
+        let count = scan_files(upload_dir, db).await?;
+
         return Ok((
             StatusCode::OK,
             Json(json!({
                 "index": chunk_index,
-                "upload_complete": true
+                "upload_complete": true,
+                "num_files": count
             })),
         ));
     }
@@ -110,7 +116,8 @@ pub async fn upload_handler(
         StatusCode::OK,
         Json(json!({
             "index": chunk_index,
-            "upload_complete": false
+            "upload_complete": false,
+            "num_files": 0
         })),
     ))
 }
@@ -120,7 +127,7 @@ pub async fn scan_files_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
-    let path = &state.config.book_files;
+    let path = &state.config.audiobook_location;
     let db = &state.db_pool;
 
     let files_count = scan_files(path, db).await?;
@@ -139,10 +146,10 @@ pub async fn list_scanned_files_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
-    let path = &state.config.book_files;
+    let path = &state.config.audiobook_location;
     let db = &state.db_pool;
 
-    if stage_metadata_count(db).await? == 0 {
+    if cache_row_count(db).await? == 0 {
         scan_files(path, db).await?;
     }
     let grouped_files = get_grouped_files(db).await?;

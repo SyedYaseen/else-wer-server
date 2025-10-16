@@ -1,6 +1,6 @@
 use crate::{
     api::api_error::ApiError,
-    models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache},
+    models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache, ResolvedStatus},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqlitePool};
@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 
-pub async fn stage_metadata_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
+pub async fn cache_row_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
     let row = sqlx::query!(
         r#"
         SELECT COUNT(id) as count
@@ -28,29 +28,154 @@ pub struct FileScanCacheFilePaths {
     pub file_path: String,
 }
 
-pub async fn fetch_stage_by_parent_path(
+// Init scan / UI upload / Moved files
+pub async fn sync_disk_db_state(
     db: &Pool<Sqlite>,
-    parent_path: &Path,
-) -> Result<HashSet<String>, ApiError> {
-    let parent_path_str = parent_path.to_string_lossy();
-
-    let rows = sqlx::query_as::<_, FileScanCacheFilePaths>(
-        r#"
-        SELECT id, file_path 
-        FROM file_scan_cache
-        WHERE path_parent = ?
-        "#,
-    )
-    .bind(parent_path_str)
-    .fetch_all(db)
-    .await
-    .unwrap();
-
-    let items: HashSet<String> = rows.into_iter().map(|r| r.file_path).collect();
-    Ok(items)
+    metadata_list: Vec<FileScanCache>,
+) -> Result<u64, ApiError> {
+    let count = save_metadata_to_cache(db, metadata_list).await?;
+    insert_new_books_from_cache(db).await?;
+    insert_new_files_from_cache(db).await?;
+    update_fsc_resolved_status(db).await?;
+    Ok(count)
 }
 
-pub async fn fetch_all_stage_file_paths(db: &Pool<Sqlite>) -> Result<HashSet<String>, ApiError> {
+pub async fn save_metadata_to_cache(
+    db: &Pool<Sqlite>,
+    metadata_list: Vec<FileScanCache>,
+) -> Result<u64, ApiError> {
+    if metadata_list.is_empty() {
+        return Ok(0);
+    }
+    let rawmet = "".to_owned();
+    let mut query = String::from(
+        "INSERT OR IGNORE INTO file_scan_cache (
+            author, title, clean_title, file_path, file_name, path_parent,
+            series, clean_series, series_part, cover_art, pub_year, narrated_by,
+            duration, track_number, disc_number, file_size, mime_type, channels,
+            sample_rate, bitrate, dramatized, extracts, raw_metadata,
+            resolve_status, hash
+        ) VALUES ",
+    );
+
+    let mut first = true;
+    for _ in &metadata_list {
+        if !first {
+            query.push_str(", ");
+        }
+        first = false;
+        query.push_str(
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        );
+    }
+
+    // Prepare query_with
+    let mut q = sqlx::query_with(&query, sqlx::sqlite::SqliteArguments::default());
+
+    // Bind all values
+    for m in &metadata_list {
+        let res_status = &m.resolve_status;
+        q = q
+            .bind(&m.author)
+            .bind(&m.title)
+            .bind(&m.clean_title)
+            .bind(&m.file_path)
+            .bind(&m.file_name)
+            .bind(&m.path_parent)
+            .bind(&m.series)
+            .bind(&m.clean_series)
+            .bind(&m.series_part)
+            .bind(&m.cover_art)
+            .bind(&m.pub_year)
+            .bind(&m.narrated_by)
+            .bind(&m.duration)
+            .bind(&m.track_number)
+            .bind(&m.disc_number)
+            .bind(&m.file_size)
+            .bind(&m.mime_type)
+            .bind(&m.channels)
+            .bind(&m.sample_rate)
+            .bind(&m.bitrate)
+            .bind(&m.dramatized)
+            .bind(&m.extracts)
+            .bind(&rawmet)
+            .bind(res_status.value())
+            .bind(&m.hash);
+    }
+
+    let result = q.execute(db).await.unwrap();
+    Ok(result.rows_affected())
+}
+
+pub async fn insert_new_books_from_cache(pool: &SqlitePool) -> Result<(), ApiError> {
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO audiobooks (author, series, title, files_location, cover_art, metadata, duration, created_at, updated_at)
+        SELECT
+            fsc.author,
+            fsc.clean_series,
+            fsc.clean_series,
+            fsc.path_parent,
+            fsc.cover_art,
+            fsc.raw_metadata,
+            fsc.duration,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        FROM file_scan_cache fsc
+        WHERE fsc.resolve_status = 0 and fsc.author IS NOT NULL and fsc.clean_series is not null
+        "#
+    )
+    .execute(pool)
+    .await.unwrap();
+
+    Ok(())
+}
+
+pub async fn insert_new_files_from_cache(pool: &SqlitePool) -> Result<(), ApiError> {
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
+        SELECT
+            ab.id AS book_id,
+            fsc.id AS file_id,
+            fsc.file_name,
+            fsc.file_path,
+            fsc.duration,
+            fsc.channels,
+            fsc.sample_rate,
+            fsc.bitrate
+        FROM
+            file_scan_cache fsc
+            JOIN audiobooks ab ON ab.author = fsc.author
+            AND ab.title = fsc.clean_series
+        WHERE
+            fsc.resolve_status = 0
+        "#
+    )
+    .execute(pool)
+    .await.unwrap();
+
+    Ok(())
+}
+
+pub async fn update_fsc_resolved_status(db: &SqlitePool) -> Result<(), ApiError> {
+    let auto_resolved = ResolvedStatus::AutoResolved.value();
+    sqlx::query!(
+        r#"
+        UPDATE file_scan_cache SET resolve_status = ?1
+        "#,
+        auto_resolved
+    )
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
+// Moved files on disk
+pub async fn fetch_all_stage_file_paths(
+    db: &Pool<Sqlite>,
+) -> Result<HashMap<String, i64>, ApiError> {
     let rows = sqlx::query_as::<_, FileScanCacheFilePaths>(
         r#"
         SELECT id, file_path 
@@ -60,94 +185,72 @@ pub async fn fetch_all_stage_file_paths(db: &Pool<Sqlite>) -> Result<HashSet<Str
     .fetch_all(db)
     .await?;
 
-    let items: HashSet<String> = rows.into_iter().map(|r| r.file_path).collect();
+    let mut items: HashMap<String, i64> = HashMap::new();
+
+    rows.into_iter().for_each(|r| {
+        items.insert(r.file_path, r.id);
+    });
+
     Ok(items)
 }
 
 pub async fn delete_removed_paths_from_cache(
     db: &Pool<Sqlite>,
-    parent_paths: &[String],
+    delete_fsc_ids: &[i64],
 ) -> Result<u64, ApiError> {
-    if parent_paths.is_empty() {
+    if delete_fsc_ids.is_empty() {
         return Ok(0);
     }
 
     let placeholders = std::iter::repeat("?")
-        .take(parent_paths.len())
+        .take(delete_fsc_ids.len())
         .collect::<Vec<_>>()
         .join(", ");
 
-    let query = format!(
-        "DELETE FROM file_scan_cache WHERE file_path IN ({})",
-        placeholders
+    let del_fsc_sql = format!("DELETE FROM file_scan_cache WHERE id IN ({})", placeholders);
+    let del_files_sql = format!("DELETE FROM files WHERE file_id IN ({})", placeholders);
+    // let del_books_sql = format!(
+    //     "DELETE FROM audiobooks WHERE id IN (
+    //         SELECT DISTINCT b.id
+    //         FROM audiobooks b
+    //         LEFT JOIN files f ON b.id = f.book_id
+    //         WHERE f.file_id IN ({})
+    //     )",
+    //     placeholders
+    // );
+
+    let mut del_fsc_q = sqlx::query(&del_fsc_sql);
+    let mut del_files_q = sqlx::query(&del_files_sql);
+    // let mut del_books_q: sqlx::query::Query<'_, Sqlite, SqliteArguments> =
+    //     sqlx::query(&del_books_sql);
+
+    for id in delete_fsc_ids {
+        del_fsc_q = del_fsc_q.bind(id);
+        del_files_q = del_files_q.bind(id);
+        // del_books_q = del_books_q.bind(id);
+    }
+
+    let df = del_files_q.execute(db).await?;
+    let result = del_fsc_q.execute(db).await?;
+    // let db_del = del_books_q.execute(db).await?;
+
+    // Delete orphaned audiobooks
+    let del_books_sql = "
+    DELETE FROM audiobooks
+    WHERE id IN (
+        SELECT b.id
+        FROM audiobooks b
+        LEFT JOIN files f ON b.id = f.book_id
+        WHERE f.book_id IS NULL
+    )";
+    let db_del = sqlx::query(del_books_sql).execute(db).await?;
+    println!(
+        "Del files: {} Del Fsc: {} Del Books: {}",
+        df.rows_affected(),
+        result.rows_affected(),
+        db_del.rows_affected()
     );
-
-    let mut q = sqlx::query(&query);
-    for path in parent_paths {
-        q = q.bind(path);
-    }
-
-    let result = q.execute(db).await?;
     Ok(result.rows_affected())
-}
-
-pub async fn save_stage_metadata(
-    db: &Pool<Sqlite>,
-    metadata: FileScanCache,
-) -> Result<u64, ApiError> {
-    let resolve_status = metadata.resolve_status.value();
-    let rawmet = "".to_owned();
-    let save_res = sqlx::query!(
-        r#"
-            INSERT INTO file_scan_cache (
-                author, title, clean_title, file_path, file_name, path_parent, series, clean_series, series_part, 
-                cover_art, pub_year, narrated_by, duration, track_number, 
-                disc_number, file_size, mime_type, channels, sample_rate, 
-                bitrate, dramatized, extracts,  raw_metadata, resolve_status, hash
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 
-                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
-            )
-            "#,
-        metadata.author,
-        metadata.title,
-        metadata.clean_title,
-        metadata.file_path,
-        metadata.file_name,
-        metadata.path_parent,
-        metadata.series,
-        metadata.clean_series,
-        metadata.series_part,
-        metadata.cover_art,
-        metadata.pub_year,
-        metadata.narrated_by,
-        metadata.duration,
-        metadata.track_number,
-        metadata.disc_number,
-        metadata.file_size,
-        metadata.mime_type,
-        metadata.channels,
-        metadata.sample_rate,
-        metadata.bitrate,
-        metadata.dramatized,
-        metadata.extracts,
-        rawmet, //metadata.raw_metadata,
-        resolve_status,
-        metadata.hash
-    )
-    .execute(db)
-    .await;
-
-    match save_res {
-        Ok(res) => {
-            tracing::info!("Saved {} files to database", res.rows_affected());
-            Ok(res.rows_affected())
-        }
-        Err(e) => {
-            tracing::error!("Failed to save {}", e);
-            Err(ApiError::Database(e))
-        }
-    }
 }
 
 pub async fn update_cache_metadata(
@@ -484,19 +587,3 @@ pub async fn add_modify_audiobook_files(pool: &SqlitePool) -> Result<(), ApiErro
     .await.unwrap();
     Ok(())
 }
-// pub async fn get_changes(
-//     db: &Pool<Sqlite>,
-//     ids: &Vec<i64>,
-// ) -> Result<Vec<FileScanCache>, ApiError> {
-//     let mut qb: QueryBuilder<Sqlite> =
-//         QueryBuilder::new("SELECT * FROM file_scan_cache WHERE id IN (");
-
-//     let mut separated = qb.separated(", ");
-//     for id in ids {
-//         separated.push_bind(id);
-//     }
-//     separated.push_unseparated(")");
-
-//     let rows: Vec<FileScanCache> = qb.build_query_as().fetch_all(db).await?;
-//     Ok(rows)
-// }

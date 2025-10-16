@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 
     // let _ = cleanup(&db_pool).await;
     ensure_admin_user(&db_pool).await.unwrap();
-    let _ = scan_files_startup(&config.book_files, &db_pool).await;
+    let _ = scan_files_startup(&config.audiobook_location, &db_pool).await;
 
     let state = AppState {
         db_pool: db_pool,

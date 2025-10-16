@@ -5,7 +5,7 @@ pub struct Config {
     pub database_url: String,
     pub host: String,
     pub port: u16,
-    pub book_files: String,
+    pub audiobook_location: String,
     pub jwt_secret: anyhow::Result<String>,
 }
 
@@ -19,7 +19,8 @@ impl Config {
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
-            book_files: env::var("AUDIOBOOKS_LOCATION").unwrap_or_else(|_| "data".to_string()),
+            audiobook_location: env::var("AUDIOBOOKS_LOCATION")
+                .unwrap_or_else(|_| "data".to_string()),
             jwt_secret: env::var("JWT_SECRET").with_context(|| "Please set JWT SECRET"),
         })
     }
