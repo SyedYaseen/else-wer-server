@@ -2,7 +2,7 @@ use crate::api::auth_extractor::AuthUser;
 use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
-use crate::file_ops::org_books::{init_books_from_file_scan_cache, save_organized_books};
+use crate::file_ops::org_books::save_organized_books;
 use crate::file_ops::scan_files::scan_files;
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
@@ -171,21 +171,6 @@ pub async fn save_organized_files_handler(
     let db = &state.db_pool;
     let _ = save_organized_books(db, payload).await;
     // cover_links(db).await?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "message": "Confirmed entry",
-        })),
-    ))
-}
-
-pub async fn init_books_from_file_scan_cache_handler(
-    State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
-) -> Result<impl IntoResponse, ApiError> {
-    let db = &state.db_pool;
-    let _ = init_books_from_file_scan_cache(db).await;
-    cover_links(db).await?;
     Ok((
         StatusCode::OK,
         Json(json!({

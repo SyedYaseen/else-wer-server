@@ -209,32 +209,6 @@ pub async fn delete_removed_paths_from_cache(
 
     let del_fsc_sql = format!("DELETE FROM file_scan_cache WHERE id IN ({})", placeholders);
     let del_files_sql = format!("DELETE FROM files WHERE file_id IN ({})", placeholders);
-    // let del_books_sql = format!(
-    //     "DELETE FROM audiobooks WHERE id IN (
-    //         SELECT DISTINCT b.id
-    //         FROM audiobooks b
-    //         LEFT JOIN files f ON b.id = f.book_id
-    //         WHERE f.file_id IN ({})
-    //     )",
-    //     placeholders
-    // );
-
-    let mut del_fsc_q = sqlx::query(&del_fsc_sql);
-    let mut del_files_q = sqlx::query(&del_files_sql);
-    // let mut del_books_q: sqlx::query::Query<'_, Sqlite, SqliteArguments> =
-    //     sqlx::query(&del_books_sql);
-
-    for id in delete_fsc_ids {
-        del_fsc_q = del_fsc_q.bind(id);
-        del_files_q = del_files_q.bind(id);
-        // del_books_q = del_books_q.bind(id);
-    }
-
-    let df = del_files_q.execute(db).await?;
-    let result = del_fsc_q.execute(db).await?;
-    // let db_del = del_books_q.execute(db).await?;
-
-    // Delete orphaned audiobooks
     let del_books_sql = "
     DELETE FROM audiobooks
     WHERE id IN (
@@ -243,7 +217,19 @@ pub async fn delete_removed_paths_from_cache(
         LEFT JOIN files f ON b.id = f.book_id
         WHERE f.book_id IS NULL
     )";
+
+    let mut del_fsc_q = sqlx::query(&del_fsc_sql);
+    let mut del_files_q = sqlx::query(&del_files_sql);
+
+    for id in delete_fsc_ids {
+        del_fsc_q = del_fsc_q.bind(id);
+        del_files_q = del_files_q.bind(id);
+    }
+
+    let df = del_files_q.execute(db).await?;
+    let result = del_fsc_q.execute(db).await?;
     let db_del = sqlx::query(del_books_sql).execute(db).await?;
+
     println!(
         "Del files: {} Del Fsc: {} Del Books: {}",
         df.rows_affected(),
@@ -426,15 +412,6 @@ pub async fn get_grouped_files(
     Ok(result)
 }
 
-// fn bind_ids<'a>(qb: &'a mut QueryBuilder<'a, sqlx::Sqlite>, file_ids: &'a Vec<i64>) {
-//     qb.push(" WHERE id IN (");
-//     let mut separated = qb.separated(", ");
-//     for id in file_ids {
-//         separated.push_bind(id);
-//     }
-//     separated.push_unseparated(")");
-// }
-
 fn bind_ids<'a>(
     mut qb: QueryBuilder<'a, sqlx::Sqlite>,
     id_name: &str,
@@ -455,94 +432,69 @@ pub async fn save_user_file_org_changes_filescan_cache(
     pool: &SqlitePool,
     changes: Vec<ChangeDto>,
 ) -> Result<(), sqlx::Error> {
-    let q: &'static str = "UPDATE file_scan_cache SET resolve_status = 2,";
+    let fsc_q: &'static str = "UPDATE file_scan_cache SET resolve_status = 2,";
+    let abk_q = "UPDATE audiobooks SET ";
+    let files_q = "UPDATE files SET file_name = ";
+
     for change in changes {
-        let mut qb = QueryBuilder::new(q);
-        let mut set_parts: Vec<(&'static str, String)> = Vec::new();
+        let mut files_has_update = false;
+        let mut fsc_qb = QueryBuilder::new(fsc_q);
+        let mut files_qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new(files_q);
+        let mut abk_qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new(abk_q);
+
+        let mut fsc_parts: Vec<(&'static str, String)> = Vec::new();
+        let mut abk_parts: Vec<(&'static str, String)> = Vec::new();
 
         if let Some(new_author) = change.new_author {
-            set_parts.push(("author", new_author));
+            fsc_parts.push(("author", new_author.clone()));
+            abk_parts.push(("author", new_author));
         }
 
         if let Some(new_file_title) = change.new_filetitle {
-            set_parts.push(("file_name", new_file_title));
+            fsc_parts.push(("file_name", new_file_title.clone()));
+            files_qb.push_bind(new_file_title);
+            files_has_update = true;
         }
 
         if let Some(new_series) = change.new_series {
-            set_parts.push(("clean_series", new_series));
+            fsc_parts.push(("clean_series", new_series.clone()));
+            abk_parts.push(("series", new_series.clone()));
+            abk_parts.push(("title", new_series));
         }
 
-        for (i, (field, value)) in set_parts.into_iter().enumerate() {
+        for (i, (field, value)) in fsc_parts.into_iter().enumerate() {
             if i > 0 {
-                qb.push(", ");
+                fsc_qb.push(", ");
             }
-            qb.push(field).push(" = ").push_bind(value);
+            fsc_qb.push(field).push(" = ").push_bind(value);
         }
 
-        qb = bind_ids(qb, "id", &change.file_ids);
-        qb.build().execute(pool).await?;
+        // fsc
+        fsc_qb = bind_ids(fsc_qb, "id", &change.file_ids);
+        fsc_qb.build().execute(pool).await.unwrap();
+
+        if !abk_parts.is_empty() {
+            for (i, (field, value)) in abk_parts.into_iter().enumerate() {
+                if i > 0 {
+                    abk_qb.push(", ");
+                }
+                abk_qb.push(field).push(" = ").push_bind(value);
+            }
+            abk_qb.push(" WHERE id in (SELECT book_id from files");
+            abk_qb = bind_ids(abk_qb, "file_id", &change.file_ids);
+            abk_qb.push(")").build().execute(pool).await?;
+        }
+
+        // Files
+        if files_has_update {
+            files_qb
+                .push("WHERE file_id = ")
+                .push_bind(&change.file_ids.first())
+                .build()
+                .execute(pool)
+                .await
+                .unwrap();
+        }
     }
-    Ok(())
-}
-
-pub async fn add_modify_audiobook_files(pool: &SqlitePool) -> Result<(), ApiError> {
-    // TODO: Create query that also moves empty authors/ add in dumy authors
-    sqlx::query(
-        r#"
-        INSERT INTO audiobooks (author, series, title, files_location, cover_art, metadata, duration, created_at, updated_at)
-        SELECT
-            fsc.author,
-            fsc.clean_series,
-            fsc.clean_series,
-            fsc.path_parent,
-            fsc.cover_art,
-            fsc.raw_metadata,
-            fsc.duration,
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP
-        FROM file_scan_cache fsc
-        WHERE fsc.resolve_status = 2 and fsc.author IS NOT NULL and fsc.clean_series is not null
-        ON CONFLICT(author, title) DO UPDATE SET
-            series = excluded.series,
-            files_location = excluded.files_location,
-            cover_art = excluded.cover_art,
-            metadata = excluded.metadata,
-            duration = excluded.duration,
-            updated_at = CURRENT_TIMESTAMP
-        "#
-    )
-    .execute(pool)
-    .await.unwrap();
-
-    // 2️⃣ Upsert files
-    sqlx::query(
-        r#"
-        INSERT INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate)
-        SELECT
-            ab.id AS book_id,
-            fsc.id AS file_id,
-            fsc.file_name,
-            fsc.file_path,
-            fsc.duration,
-            fsc.channels,
-            fsc.sample_rate,
-            fsc.bitrate
-        FROM
-            file_scan_cache fsc
-            JOIN audiobooks ab ON ab.author = fsc.author
-            AND ab.title = fsc.clean_series
-        WHERE
-            fsc.resolve_status = 2
-        ON CONFLICT(book_id, file_id, file_path) DO UPDATE SET
-            file_name = excluded.file_name,
-            file_path = excluded.file_path,
-            duration = excluded.duration,
-            channels = excluded.channels,
-            sample_rate = excluded.sample_rate,
-            bitrate = excluded.bitrate
-        "#
-    )
-    .execute(pool)
-    .await.unwrap();
     Ok(())
 }

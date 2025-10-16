@@ -1,6 +1,5 @@
 use futures::{StreamExt, stream};
 use std::{
-    collections::{HashSet, hash_set},
     fs::File,
     io::BufReader,
     mem::take,
@@ -12,13 +11,9 @@ use walkdir::WalkDir;
 use crate::{
     api::api_error::ApiError,
     db::meta_scan::{
-        add_modify_audiobook_files, delete_removed_paths_from_cache, fetch_all_stage_file_paths,
-        save_metadata_to_cache, sync_disk_db_state,
+        delete_removed_paths_from_cache, fetch_all_stage_file_paths, sync_disk_db_state,
     },
-    file_ops::{
-        book_cover::cover_links,
-        meta_cleanup::{grouped_meta_cleanup, meta_cleanup},
-    },
+    file_ops::{book_cover::cover_links, meta_cleanup::meta_cleanup},
     models::meta_scan::FileScanCache,
 };
 
