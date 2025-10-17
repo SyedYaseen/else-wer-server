@@ -2,7 +2,7 @@
 use std::os::unix::fs::symlink;
 #[cfg(windows)]
 use std::os::windows::fs::symlink_file;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use regex::Regex;
 use sqlx::SqlitePool;
@@ -20,6 +20,15 @@ pub async fn create_cover_link(
     ext: &str,
     book: &AudioBookRow,
 ) -> Result<Option<String>, ApiError> {
+    let source_path = std::env::current_dir()?.join(source);
+
+    if !source_path.exists() {
+        return Err(ApiError::IOErrCustom(format!(
+            "Source does not exist: {:?}",
+            source_path
+        )));
+    }
+
     let cover_name = &book.title.replace(' ', "_").to_lowercase().to_owned();
     let re = Regex::new(r"[^a-z0-9_\-\.]").unwrap();
     let cover_name = re.replace_all(&cover_name, "");
@@ -27,15 +36,9 @@ pub async fn create_cover_link(
     let link_name = format!("{}.{}", cover_name, ext);
     let link_path = std::env::current_dir()?.join("covers").join(&link_name);
 
-    let source_path = std::env::current_dir()?.join(source);
-
-    // println!("Creating symlink: {:?} -> {:?}", link_path, source_path);
-
-    if !source_path.exists() {
-        return Err(ApiError::IOErrCustom(format!(
-            "Source does not exist: {:?}",
-            source_path
-        )));
+    if link_path.exists() {
+        tracing::info!("Cover art symlink already exists for {}", link_name);
+        return Ok(None);
     }
 
     if let Some(parent) = link_path.parent() {

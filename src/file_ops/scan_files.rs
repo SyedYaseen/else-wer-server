@@ -79,15 +79,17 @@ async fn extract_tag(
         Ok(tagged_file) => {
             if let Some(tag) = extract_besttag(tagged_file.tags()).await {
                 if let Some(title) = tag.title() {
-                    metadata.title = Some(title.trim().to_string());
+                    metadata.title = Some(title.trim().to_lowercase().to_string());
                 }
 
                 if let Some(artist) = tag.artist() {
-                    metadata.author = Some(artist.trim().to_string());
+                    metadata.author = Some(artist.trim().to_lowercase().to_string());
+                } else {
+                    metadata.author = Some("unknown".to_string());
                 }
 
                 if let Some(album) = tag.album() {
-                    metadata.series = Some(album.trim().to_string());
+                    metadata.series = Some(album.trim().to_lowercase().to_string());
                 }
 
                 if let Some(track) = tag.track() {
@@ -159,53 +161,6 @@ async fn create_metadata(fpath: &Path) -> FileScanCache {
         metadata.file_size = f_meta.len() as i64;
     }
     metadata
-}
-
-pub async fn testscan_files(path_str: &str, db: &SqlitePool) -> Result<i32, ApiError> {
-    let mut count = 0;
-    for entry in WalkDir::new(path_str).contents_first(true) {
-        if let Ok(item) = entry {
-            if item.file_type().is_file() {
-                let fpath = item.path();
-
-                match fpath
-                    .extension()
-                    .and_then(|f| f.to_str())
-                    .map(|f| f.to_lowercase())
-                {
-                    Some(ext) if matches!(ext.as_str(), "mp3" | "m4b" | "flac" | "m4a") => ext,
-                    _ => continue, // Skip if no valid extension
-                };
-
-                let mut metadata = create_metadata(&fpath).await;
-
-                if let Err(e) = extract_metadata(&mut metadata).await {
-                    tracing::error!("Failed to extract metadata {} | {}.", fpath.display(), e);
-                }
-
-                meta_cleanup(&mut metadata);
-                // if let Err(e) = save_stage_metadata(db, metadata).await {
-                //     tracing::error!("Failed to save {}", e);
-                // }
-
-                // if let Err(e) = add_modify_audiobook_files(db).await {
-                //     tracing::error!("Failed to update row on server database {}", e);
-                // }
-                count += 1;
-            }
-        }
-    }
-
-    let _ = cover_links(db).await.inspect_err(|e| {
-        tracing::error!("Failed to get cover for {}", e);
-    });
-    // Second db scan and cleanup
-    // grouped_meta_cleanup(db).await;
-
-    // capture the file name to look for clues on order of file
-
-    // Cross referece the parents, grandparents to check for clues of series name or author name to verify
-    Ok(count)
 }
 
 async fn capture_file_paths(path_str: &str) -> Vec<PathBuf> {
@@ -281,9 +236,14 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError
         metadatas
     };
 
+    const CHUNK_SIZE: usize = 500;
+
     let mut count = 0;
     if !metadatas.is_empty() {
-        count = sync_disk_db_state(db, metadatas).await.unwrap();
+        for chunk in metadatas.chunks(CHUNK_SIZE) {
+            let chunk_vec = chunk.clone();
+            count += sync_disk_db_state(db, chunk_vec).await.unwrap();
+        }
     }
 
     Ok(count)

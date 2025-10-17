@@ -123,9 +123,10 @@ impl FileScanCache {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, FromRow)]
 pub struct FileInfo {
     pub id: i64,
+    pub author: String,
     pub title: String,
     pub series: String,
     pub file_path: String,

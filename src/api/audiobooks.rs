@@ -101,6 +101,7 @@ pub async fn upload_handler(
         remove_dir_all(&parts_dir).await?;
         println!("✅ File saved to {final_path}");
         let count = scan_files(upload_dir, db).await?;
+        cover_links(db).await?;
 
         return Ok((
             StatusCode::OK,
@@ -131,6 +132,7 @@ pub async fn scan_files_handler(
     let db = &state.db_pool;
 
     let files_count = scan_files(path, db).await?;
+    cover_links(db).await?;
     Ok((
         StatusCode::OK,
         Json(json!({
@@ -151,6 +153,7 @@ pub async fn list_scanned_files_handler(
 
     if cache_row_count(db).await? == 0 {
         scan_files(path, db).await?;
+        cover_links(db).await?;
     }
     let grouped_files = get_grouped_files(db).await?;
 

@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sqlx::SqlitePool;
 use strsim::levenshtein;
+use symphonia::core::meta;
 
 lazy_static! {
     static ref REMOVE_TERMS: Regex = Regex::new(r"(?i)\s*[\(\[]\s*(abridged|unabridged|audible|special edition)\s*[\)\]]").unwrap();
@@ -13,7 +14,9 @@ lazy_static! {
     static ref TRAILING_SEPARATORS: Regex = Regex::new(r"(?i)\s*(-|–|—|::|by)\s*$").unwrap();
     static ref MULTIPLE_SPACES: Regex = Regex::new(r"\s{2,}").unwrap();
     static ref DISC_ORDER_TOKENS: Regex = Regex::new(r"(?i)\b(?:vol|volume|part|disc)?\s*(-?\d+(?:-\d+)?)\b").unwrap();
-    static ref DISC_REMOVAL: Regex = Regex::new(r"(?i)\b(?:vol|volume|part|disc)\s*\d+\b|\b(?:disc)\b").unwrap();
+
+    static ref PART_REMOVAL: Regex = Regex::new(r"(?i)\b(?:vol|volume|part|disc)[\s._-]*\d+\b|\bdisc\b").unwrap();
+
     // static ref BOOK_ORDER_TOKENS: Regex = Regex::new(r"(?i)\b(?:book|part)?\s*(-?\d+(?:-\d+)?)\b").unwrap();
     // static ref FILE_ORDER_TOKENS: Regex = Regex::new(r"(?i)\b(?:track|episode|ep|part|chapter)?\s*(-?\d+(?:-\d+)?)\b").unwrap();
 }
@@ -28,7 +31,7 @@ pub fn clean_metadata(text: &String) -> (String, Vec<String>) {
 
     let mut result = REMOVE_TERMS.replace(text, "").to_string();
 
-    // result = DISC_REMOVAL.replace(&result, "").to_string();
+    result = PART_REMOVAL.replace(&result, "").to_string();
 
     for caps in BRACKET_CONTENT.captures_iter(&result) {
         for i in 1..=3 {
@@ -46,6 +49,7 @@ pub fn clean_metadata(text: &String) -> (String, Vec<String>) {
     // Clean whitespace
     result = result.trim().to_string();
     result = MULTIPLE_SPACES.replace_all(&result, " ").to_string();
+
     (result, bracket_info)
 }
 
@@ -61,51 +65,41 @@ fn capture_disc_order(text: &str) -> Option<i64> {
     None
 }
 
-fn assign_title_if_empty(metadata: &mut FileScanCache) {
-    if metadata.title.is_none() || metadata.title == Some("".to_string()) {
-        let fname = metadata.file_name.clone();
-        if let Some(n) = fname.split(".").nth(0) {
-            if !n.parse::<i64>().is_ok() {
-                metadata.title = Some(n.to_string());
+fn series_cleanup(metadata: &mut FileScanCache) {
+    match &metadata.series {
+        Some(series) => {
+            if is_dramatized(series) {
+                metadata.dramatized = true;
+            }
+
+            metadata.disc_number = capture_disc_order(&series);
+
+            let (clean_series, extracted_info) = clean_metadata(series);
+            metadata.clean_series = Some(clean_series);
+
+            // let order_cleared_series = match &metadata.clean_series {
+            //     Some(val) => Some(BOOK_ORDER_TOKENS.replace_all(val, "").trim().to_string()),
+            //     None => None,
+            // };
+
+            // metadata.clean_series = order_cleared_series;
+
+            if extracted_info.iter().len() > 0 {
+                let joined_extract = extracted_info.join(",");
+
+                match &metadata.extracts {
+                    Some(val) => {
+                        metadata.extracts = Some(format!("{} | {}", val, joined_extract));
+                    }
+                    None => {
+                        metadata.extracts = Some(joined_extract);
+                    }
+                }
             }
         }
-    }
-
-    if metadata.title.is_none()
-        || metadata.title == Some("".to_string()) && metadata.series.is_some()
-    {
-        metadata.title = metadata.series.clone();
-    }
-}
-
-fn series_cleanup(metadata: &mut FileScanCache) {
-    if let Some(series) = &metadata.series {
-        if is_dramatized(series) {
-            metadata.dramatized = true;
-        }
-
-        metadata.disc_number = capture_disc_order(&series);
-
-        let (clean_series, extracted_info) = clean_metadata(series);
-        metadata.clean_series = Some(clean_series);
-
-        // let order_cleared_series = match &metadata.clean_series {
-        //     Some(val) => Some(BOOK_ORDER_TOKENS.replace_all(val, "").trim().to_string()),
-        //     None => None,
-        // };
-
-        // metadata.clean_series = order_cleared_series;
-
-        if extracted_info.iter().len() > 0 {
-            let joined_extract = extracted_info.join(",");
-
-            match &metadata.extracts {
-                Some(val) => {
-                    metadata.extracts = Some(format!("{} | {}", val, joined_extract));
-                }
-                None => {
-                    metadata.extracts = Some(joined_extract);
-                }
+        None => {
+            if metadata.title.is_some() {
+                metadata.clean_series = metadata.clean_title.clone();
             }
         }
     }
@@ -124,14 +118,51 @@ fn author_cleanup(metadata: &mut FileScanCache) {
     }
 }
 
+/*
+* If no title exists, apply cleaned series value else cleaned filename value
+* If title exists, clean and add it as clean title
+*/
+fn title_cleanup(metadata: &mut FileScanCache) {
+    let clean_title: Option<String> = match &metadata.title {
+        None => {
+            let mut title: Option<String> = {
+                if let Some(series) = &metadata.series {
+                    Some(series.clone())
+                } else {
+                    let fname = metadata.file_name.clone();
+                    if let Some(n) = fname.split('.').next() {
+                        if n.parse::<i64>().is_err() {
+                            Some(n.to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+            };
+
+            if let Some(raw_title) = &title {
+                title = Some(clean_metadata(raw_title).0);
+                title
+            } else {
+                None
+            }
+        }
+        Some(title) => Some(clean_metadata(title).0),
+    };
+
+    metadata.clean_title = clean_title;
+}
+
 pub fn meta_cleanup(metadata: &mut FileScanCache) {
-    series_cleanup(metadata);
+    title_cleanup(metadata);
     author_cleanup(metadata);
+    series_cleanup(metadata);
 
     // assign_track_number(metadata);
 
     println!("");
-    // assign_title_if_empty(metadata);
     // println!(
     //     "{} {}",
     //     metadata.file_name,
