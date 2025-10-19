@@ -1,6 +1,6 @@
 use crate::{
     api::api_error::ApiError,
-    models::meta_scan::{ChangeDto, FileInfo, FileScanCache, ResolvedStatus},
+    models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache, ResolvedStatus},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqlitePool};
@@ -242,7 +242,7 @@ pub async fn get_grouped_files(
 ) -> Result<HashMap<String, HashMap<String, Vec<FileInfo>>>, ApiError> {
     let rows = sqlx::query_as::<_, FileInfo>(
         r#"
-            SELECT f.file_id as id, b.author, f.file_name, b.series, b.title, fsc.path_parent, f.file_path
+            SELECT f.file_id as id, b.id as book_id, b.author, f.file_name, b.series, b.title, fsc.path_parent, f.file_path
             FROM files f JOIN audiobooks b ON f.book_id = b.id
             JOIN file_scan_cache fsc ON f.file_id = fsc.id;
         "#
@@ -280,12 +280,12 @@ pub async fn get_grouped_files(
 fn bind_ids<'a>(
     mut qb: QueryBuilder<'a, sqlx::Sqlite>,
     id_name: &str,
-    file_ids: &'a Vec<i64>,
+    ids: &'a Vec<i64>,
 ) -> QueryBuilder<'a, sqlx::Sqlite> {
     qb.push(format!(" WHERE {id_name} IN ("));
 
     let mut separated = qb.separated(", ");
-    for id in file_ids {
+    for id in ids {
         separated.push_bind(id);
     }
 
@@ -299,69 +299,92 @@ pub async fn save_user_file_org_changes_filescan_cache(
 ) -> Result<(), sqlx::Error> {
     let fsc_q: &'static str = "UPDATE file_scan_cache SET resolve_status = 2,";
     let abk_q = "UPDATE audiobooks SET ";
-    let files_q = "UPDATE files SET file_name = ";
+    let files_q = "UPDATE files SET ";
 
     for change in changes {
-        let mut files_has_update = false;
         let mut fsc_qb = QueryBuilder::new(fsc_q);
         let mut files_qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new(files_q);
         let mut abk_qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new(abk_q);
 
-        let mut fsc_parts: Vec<(&'static str, String)> = Vec::new();
-        let mut abk_parts: Vec<(&'static str, String)> = Vec::new();
+        if change.change_type == ChangeType::MergeTitle {
+            if let Some(dest_book_id) = change.new_book_id {
+                files_qb.push("book_id=").push_bind(dest_book_id);
+                files_qb = bind_ids(files_qb, "file_id", &change.file_ids);
+                files_qb.build().execute(pool).await.unwrap();
 
-        if let Some(new_author) = change.new_author {
-            fsc_parts.push(("author", new_author.clone()));
-            abk_parts.push(("author", new_author));
-        }
-
-        if let Some(new_file_title) = change.new_filetitle {
-            fsc_parts.push(("file_name", new_file_title.clone()));
-            files_qb.push_bind(new_file_title);
-            files_has_update = true;
-        }
-
-        if let Some(new_series) = change.new_series {
-            fsc_parts.push(("clean_series", new_series.clone()));
-            abk_parts.push(("series", new_series.clone()));
-            abk_parts.push(("title", new_series));
-        }
-
-        for (i, (field, value)) in fsc_parts.into_iter().enumerate() {
-            if i > 0 {
-                fsc_qb.push(", ");
+                let mut prog_qb: QueryBuilder<'_, Sqlite> =
+                    QueryBuilder::new("UPDATE PROGRESS SET book_id = ");
+                prog_qb.push_bind(dest_book_id);
+                prog_qb = bind_ids(prog_qb, "file_id", &change.file_ids);
+                prog_qb.build().execute(pool).await.unwrap();
             }
-            fsc_qb.push(field).push(" = ").push_bind(value);
+
+            if let Some(curr_book_ids) = change.current_book_ids {
+                let mut abk_del_qb = QueryBuilder::new("DELETE FROM AUDIOBOOKS ");
+                abk_del_qb = bind_ids(abk_del_qb, "id", &curr_book_ids);
+                abk_del_qb.build().execute(pool).await.unwrap();
+            }
         }
 
-        // fsc
-        fsc_qb = bind_ids(fsc_qb, "id", &change.file_ids);
-        fsc_qb.build().execute(pool).await.unwrap();
+        if change.change_type == ChangeType::Rename || change.change_type == ChangeType::MoveTitle {
+            let mut files_has_update = false;
 
-        if !abk_parts.is_empty() {
-            for (i, (field, value)) in abk_parts.into_iter().enumerate() {
+            let mut fsc_parts: Vec<(&'static str, String)> = Vec::new();
+            let mut abk_parts: Vec<(&'static str, String)> = Vec::new();
+
+            if let Some(new_author) = change.new_author {
+                fsc_parts.push(("author", new_author.clone()));
+                abk_parts.push(("author", new_author));
+            }
+
+            if let Some(new_file_title) = change.new_filetitle {
+                fsc_parts.push(("file_name", new_file_title.clone()));
+                files_qb.push("file_name =").push_bind(new_file_title);
+                files_has_update = true;
+            }
+
+            if let Some(new_series) = change.new_series {
+                fsc_parts.push(("clean_series", new_series.clone()));
+                abk_parts.push(("series", new_series.clone()));
+                abk_parts.push(("title", new_series));
+            }
+
+            for (i, (field, value)) in fsc_parts.into_iter().enumerate() {
                 if i > 0 {
-                    abk_qb.push(", ");
+                    fsc_qb.push(", ");
                 }
-                abk_qb.push(field).push(" = ").push_bind(value);
+                fsc_qb.push(field).push(" = ").push_bind(value);
             }
-            abk_qb.push(" WHERE id in (SELECT book_id from files");
-            abk_qb = bind_ids(abk_qb, "file_id", &change.file_ids);
 
-            println!("{:#?}", abk_qb.sql());
+            // fsc
+            fsc_qb = bind_ids(fsc_qb, "id", &change.file_ids);
+            fsc_qb.build().execute(pool).await.unwrap();
 
-            // abk_qb.push(")").build().execute(pool).await.unwrap();
-        }
+            if !abk_parts.is_empty() {
+                for (i, (field, value)) in abk_parts.into_iter().enumerate() {
+                    if i > 0 {
+                        abk_qb.push(", ");
+                    }
+                    abk_qb.push(field).push(" = ").push_bind(value);
+                }
+                abk_qb.push(" WHERE id in (SELECT book_id from files");
+                abk_qb = bind_ids(abk_qb, "file_id", &change.file_ids);
 
-        // Files
-        if files_has_update {
-            files_qb
-                .push("WHERE file_id = ")
-                .push_bind(&change.file_ids.first())
-                .build()
-                .execute(pool)
-                .await
-                .unwrap();
+                // println!("{:#?}", abk_qb.sql());
+
+                abk_qb.push(")").build().execute(pool).await.unwrap();
+            }
+
+            // Files
+            if files_has_update {
+                files_qb
+                    .push(" WHERE file_id = ")
+                    .push_bind(&change.file_ids.first())
+                    .build()
+                    .execute(pool)
+                    .await
+                    .unwrap();
+            }
         }
     }
     Ok(())

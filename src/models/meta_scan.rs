@@ -126,6 +126,7 @@ impl FileScanCache {
 #[derive(Serialize, Debug, FromRow)]
 pub struct FileInfo {
     pub id: i64,
+    pub book_id: i64,
     pub author: String,
     pub title: String,
     pub series: String,
@@ -165,6 +166,12 @@ pub struct ChangeDto {
     pub change_type: ChangeType,
 
     pub file_ids: Vec<i64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_book_ids: Option<Vec<i64>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_book_id: Option<i64>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_author: Option<String>,
