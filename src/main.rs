@@ -2,17 +2,17 @@ mod api;
 mod config;
 mod db;
 mod file_ops;
+mod local_agent;
 mod models;
 mod services;
 use crate::{
     config::Config,
-    db::cleanup,
-    file_ops::file_ops::scan_for_audiobooks,
+    local_agent::create_key_pair,
     services::startup::{init_logging, scan_files_startup, shutdown_signal},
 };
 use axum::{
     Router,
-    http::{self, HeaderValue, Method, Request},
+    http::{self, Method, Request},
 };
 use dotenv::dotenv;
 use services::startup::ensure_admin_user;
@@ -35,6 +35,7 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     init_logging();
+    let _ = create_key_pair();
 
     let config = Arc::new(Config::from_env().unwrap());
     let db_pool = db::init_db_pool(&config.database_url)
