@@ -2,12 +2,10 @@ mod api;
 mod config;
 mod db;
 mod file_ops;
-mod local_agent;
 mod models;
 mod services;
 use crate::{
     config::Config,
-    local_agent::create_key_pair,
     services::startup::{init_logging, scan_files_startup, shutdown_signal},
 };
 use axum::{
@@ -35,7 +33,6 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     init_logging();
-    let _ = create_key_pair();
 
     let config = Arc::new(Config::from_env().unwrap());
     let db_pool = db::init_db_pool(&config.database_url)

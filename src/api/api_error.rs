@@ -45,6 +45,9 @@ pub enum ApiError {
 
     #[error("Serde Json: {0}")]
     JsonErr(#[from] serde_json::Error),
+
+    #[error("Fetch failed: {0}")]
+    ReqwestErr(#[from] reqwest::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -86,6 +89,10 @@ impl IntoResponse for ApiError {
             ApiError::JsonErr(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Err while serialization".to_string(),
+            ),
+            ApiError::ReqwestErr(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed fetch to external server. {}", e),
             ),
         };
 

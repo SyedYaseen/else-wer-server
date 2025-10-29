@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use crate::api::api_error::ApiError;
 use crate::api::middleware::AdminUser;
 use crate::db::user::{self, get_user_by_username};
@@ -13,8 +17,9 @@ use argon2::{
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
+use openssl::conf::{self, Conf};
 use serde_json::json;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Sqlite, pool};
 
 // Create user
 pub async fn create_user(
@@ -64,10 +69,20 @@ pub async fn login(
 ) -> Result<impl IntoResponse, ApiError> {
     let db: &Pool<Sqlite> = &state.db_pool;
     let config = &state.config;
+    let mut token: String = "".to_string();
+    if config.self_hosted {
+        let jwt = config.jwt_secret.as_ref().unwrap().as_bytes(); // TODO: Handle unwrap properly
+        token = auth_and_issue_jwt(&payload, db, jwt).await?;
+    } else {
+        token = get_relay_token(state.clone(), &payload).await?;
+    }
 
-    let jwt = config.jwt_secret.as_ref().unwrap().as_bytes(); // TODO: Handle unwrap properly
-
-    let token = auth_and_issue_jwt(&payload, db, jwt).await?;
+    let token_path = Path::new(&config.jwt_loc).parent();
+    if let Some(path) = token_path {
+        println!("Parent path is: {:#?}", path);
+        fs::create_dir_all(path)?;
+    }
+    tokio::fs::write(&config.jwt_loc, token.clone()).await?;
     Ok((StatusCode::ACCEPTED, Json(json!({"token": token}))))
 }
 
@@ -105,4 +120,21 @@ async fn auth_and_issue_jwt(
     )?;
 
     Ok(token)
+}
+
+async fn get_relay_token(state: AppState, payload: &LoginDto) -> Result<String, ApiError> {
+    let client = reqwest::Client::new();
+
+    let res = client
+        .post(format!("{}/login", state.config.relay_uri))
+        .json(&payload)
+        .send()
+        .await?;
+
+    let relay_token: String = res.json::<serde_json::Value>().await?["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    Ok(relay_token)
 }

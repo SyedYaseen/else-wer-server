@@ -5,7 +5,6 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::services::ServeDir;
-mod agent_register;
 pub mod api_error;
 mod audiobooks;
 mod auth_extractor;
@@ -22,10 +21,8 @@ use crate::{
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
     },
-    local_agent::create_jwt,
 };
 
-use agent_register::register_agent;
 use audiobooks::scan_files_handler;
 
 pub async fn routes() -> Router<AppState> {
@@ -54,7 +51,6 @@ pub async fn routes() -> Router<AppState> {
         // User
         .route("/create_user", post(create_user))
         .route("/login", post(login))
-        .route("/register_agent", post(register_agent))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 10))
 }
 
