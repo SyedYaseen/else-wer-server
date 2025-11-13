@@ -15,8 +15,9 @@ use crate::{
     AppState,
     api::{
         audiobooks::{
-            download_book, download_chunk, file_metadata_handler, list_books_handler,
-            list_scanned_files_handler, save_organized_files_handler, upload_handler,
+            download_book, download_chunk, file_metadata_handler, get_file_size,
+            list_books_handler, list_scanned_files_handler, save_organized_files_handler,
+            upload_handler,
         },
         sync::{get_book_progress, get_file_progress, update_progress},
         user::{create_user, login},
@@ -39,7 +40,10 @@ pub async fn routes() -> Router<AppState> {
         .route("/list_books", get(list_books_handler))
         // Files
         .route("/download_book/{book_id}", get(download_book)) // TODO: This might be obsolete
-        .route("/download_chunk/{file_id}", get(download_chunk))
+        .route(
+            "/download_chunk/{file_id}",
+            get(download_chunk).head(get_file_size),
+        )
         .route("/file_metadata/{book_id}", get(file_metadata_handler))
         // Sync
         .route(

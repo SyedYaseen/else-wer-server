@@ -1,6 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 
 use crate::api::api_error::ApiError;
 use crate::api::middleware::AdminUser;
@@ -17,9 +16,8 @@ use argon2::{
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
-use openssl::conf::{self, Conf};
 use serde_json::json;
-use sqlx::{Pool, Sqlite, pool};
+use sqlx::{Pool, Sqlite};
 
 // Create user
 pub async fn create_user(
@@ -75,14 +73,14 @@ pub async fn login(
         token = auth_and_issue_jwt(&payload, db, jwt).await?;
     } else {
         token = get_relay_token(state.clone(), &payload).await?;
+        let token_path = Path::new(&config.jwt_loc).parent();
+        if let Some(path) = token_path {
+            println!("Parent path is: {:#?}", path);
+            fs::create_dir_all(path)?;
+            tokio::fs::write(&config.jwt_loc, token.clone()).await?;
+        }
     }
 
-    let token_path = Path::new(&config.jwt_loc).parent();
-    if let Some(path) = token_path {
-        println!("Parent path is: {:#?}", path);
-        fs::create_dir_all(path)?;
-    }
-    tokio::fs::write(&config.jwt_loc, token.clone()).await?;
     Ok((StatusCode::ACCEPTED, Json(json!({"token": token}))))
 }
 

@@ -13,7 +13,7 @@ use crate::{
     db::meta_scan::{
         delete_removed_paths_from_cache, fetch_all_stage_file_paths, sync_disk_db_state,
     },
-    file_ops::{book_cover::cover_links, meta_cleanup::meta_cleanup},
+    file_ops::meta_cleanup::meta_cleanup,
     models::meta_scan::FileScanCache,
 };
 

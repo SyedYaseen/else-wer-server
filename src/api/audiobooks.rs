@@ -7,7 +7,7 @@ use crate::file_ops::scan_files::scan_files;
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
-use axum::extract::Multipart;
+use axum::extract::{Multipart, Query, Request};
 use axum::http::HeaderMap;
 use axum::{
     Json,
@@ -17,9 +17,11 @@ use axum::{
     response::IntoResponse,
 };
 
+use reqwest::Method;
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 
+use axum::http::header::RANGE;
 use serde_json::json;
 use std::io::Write;
 use std::path::PathBuf;
@@ -27,7 +29,6 @@ use tokio::fs::{self, File, create_dir_all, read_dir, remove_dir_all};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
-
 pub async fn upload_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
@@ -252,56 +253,51 @@ pub async fn download_book(
         .unwrap()
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ChunkParams {
-    pub index: i64,
-    pub size: i64,
+#[derive(Deserialize)]
+pub struct DownloadParams {
+    start: Option<u64>,
+    end: Option<u64>,
 }
-pub async fn download_chunk(
+
+pub async fn get_file_size(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
     Path(file_id): Path<i64>,
-    headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     let file_path = get_file_path(&state.db_pool, file_id).await?;
-    tracing::info!("Download init {file_path}");
-    if !PathBuf::new().join(file_path.clone()).exists() {
+    if !PathBuf::new().join(&file_path).exists() {
         return Err(ApiError::BadRequest("File not found".into()));
     }
 
-    let mut file = File::open(&file_path).await.unwrap();
-    let file_size = file.metadata().await.unwrap().len();
+    let metadata = tokio::fs::metadata(&file_path).await?;
+    let file_size = metadata.len();
 
-    // parse Range header manually
-    let (start, end) = if let Some(range) = headers.get("range") {
-        let range_str = range.to_str().unwrap_or("");
+    Ok((StatusCode::OK, [("Content-Length", file_size.to_string())]))
+}
 
-        // Expecting "bytes=start-end"
-        if let Some(range_vals) = range_str.strip_prefix("bytes=") {
-            let mut parts = range_vals.split('-');
-            let start: u64 = parts.next().unwrap_or("0").parse().unwrap_or(0);
-            let end: u64 = parts
-                .next()
-                .unwrap_or(&(file_size - 1).to_string())
-                .parse()
-                .unwrap_or(file_size - 1);
-            (start, end)
-        } else {
-            (0, file_size - 1)
-        }
-    } else {
-        (0, file_size - 1)
+pub async fn download_chunk(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+    Query(params): Query<DownloadParams>,
+    Path(file_id): Path<i64>,
+) -> Result<impl IntoResponse, ApiError> {
+    let file_path = get_file_path(&state.db_pool, file_id).await?;
+    if !PathBuf::new().join(&file_path).exists() {
+        return Err(ApiError::BadRequest("File not found".into()));
+    }
+
+    let mut file = File::open(&file_path).await?;
+    let metadata = file.metadata().await?;
+    let file_size = metadata.len();
+
+    let (start, end) = match (params.start, params.end) {
+        (Some(s), Some(e)) if s <= e && e < file_size => (s, e),
+        _ => return Err(ApiError::BadRequest("Invalid range".into())),
     };
 
     let chunk_size = end - start + 1;
-    file.seek(SeekFrom::Start(start))
-        .await
-        .map_err(|_| ApiError::Internal("Failed to seek in file".to_string()))?;
+    file.seek(SeekFrom::Start(start)).await?;
     let mut buffer = vec![0; chunk_size as usize];
-
-    file.read_exact(&mut buffer)
-        .await
-        .map_err(|_| ApiError::Internal("Failed to read file".to_string()))?;
+    file.read_exact(&mut buffer).await?;
 
     let content_range = format!("bytes {}-{}/{}", start, end, file_size);
 
@@ -310,9 +306,9 @@ pub async fn download_chunk(
         [
             ("Content-Type", "audio/mpeg".to_owned()),
             ("Content-Length", chunk_size.to_string()),
-            ("Content-Range", content_range.to_owned()),
+            ("Content-Range", content_range),
         ],
-        buffer.to_owned(),
+        buffer,
     ))
 }
 
