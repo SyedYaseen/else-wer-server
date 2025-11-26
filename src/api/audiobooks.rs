@@ -7,8 +7,7 @@ use crate::file_ops::scan_files::scan_files;
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
-use axum::extract::{Multipart, Query, Request};
-use axum::http::HeaderMap;
+use axum::extract::{Multipart, Query};
 use axum::{
     Json,
     body::Body,
@@ -17,11 +16,9 @@ use axum::{
     response::IntoResponse,
 };
 
-use reqwest::Method;
 use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
 
-use axum::http::header::RANGE;
 use serde_json::json;
 use std::io::Write;
 use std::path::PathBuf;

@@ -201,7 +201,9 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError
                         return Ok(0);
                     }
                 }
+
                 let mut metadata = create_metadata(&p).await;
+
                 if let Err(e) = extract_metadata(&mut metadata).await {
                     tracing::error!("Failed to extract metadata {} | {}.", p.display(), e);
                 }

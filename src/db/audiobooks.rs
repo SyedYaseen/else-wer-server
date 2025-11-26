@@ -7,7 +7,7 @@ use sqlx::{Pool, Sqlite};
 pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiError> {
     let books = sqlx::query_as::<_, AudioBookRow>(
         r#"
-        SELECT id, author, series, title, files_location, cover_art, duration, metadata
+        SELECT id, author, series, title, book_size, files_location, cover_art, duration, metadata
         FROM audiobooks
         ORDER BY author, series, title
         "#,
@@ -38,26 +38,6 @@ pub async fn insert_audiobook(db: &Pool<Sqlite>, book: &AudioBook) -> Result<i64
     .await?;
 
     Ok(id)
-}
-
-pub async fn update_audiobook_duration(
-    db: &Pool<Sqlite>,
-    bookid: i64,
-    duration: i64,
-) -> Result<(), ApiError> {
-    sqlx::query!(
-        r#"
-        UPDATE audiobooks
-        SET duration = ?1
-        WHERE id = ?2
-        "#,
-        duration,
-        bookid
-    )
-    .execute(db)
-    .await?;
-
-    Ok(())
 }
 
 pub async fn update_cover_art(
@@ -148,6 +128,7 @@ pub async fn get_files_by_book_id(
             book_id,
             file_id,
             file_name,
+            file_size,
             file_path,
             duration,
             channels,
@@ -170,6 +151,7 @@ pub async fn get_files_by_book_id(
                 book_id: r.book_id,
                 file_id: Some(r.file_id),
                 file_name: r.file_name,
+                file_size: r.file_size,
                 file_path: r.file_path,
                 duration: r.duration,
                 channels: r.channels,

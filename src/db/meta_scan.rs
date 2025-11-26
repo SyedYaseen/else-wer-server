@@ -35,6 +35,7 @@ pub async fn sync_disk_db_state(
     insert_new_books_from_cache(db).await?;
     insert_new_files_from_cache(db).await?;
     update_fsc_resolved_status(db).await?;
+    update_duration_file_sz(db).await.unwrap();
     Ok(count)
 }
 
@@ -108,7 +109,7 @@ pub async fn save_metadata_to_cache(
 pub async fn insert_new_books_from_cache(pool: &SqlitePool) -> Result<(), ApiError> {
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO audiobooks (author, series, title, files_location, cover_art, metadata, duration, created_at, updated_at)
+        INSERT OR IGNORE INTO audiobooks (author, series, title, files_location, cover_art, metadata, created_at, updated_at)
         SELECT
             fsc.author,
             fsc.clean_series,
@@ -116,7 +117,6 @@ pub async fn insert_new_books_from_cache(pool: &SqlitePool) -> Result<(), ApiErr
             fsc.path_parent,
             fsc.cover_art,
             fsc.raw_metadata,
-            fsc.duration,
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
         FROM file_scan_cache fsc
@@ -129,16 +129,42 @@ pub async fn insert_new_books_from_cache(pool: &SqlitePool) -> Result<(), ApiErr
     Ok(())
 }
 
+async fn update_duration_file_sz(pool: &SqlitePool) -> Result<(), ApiError> {
+    sqlx::query(
+        r#"
+WITH totals AS (
+    SELECT 
+        book_id, 
+        SUM(file_size) AS sz, 
+        SUM(duration) AS dur 
+    FROM files 
+    GROUP BY book_id
+)
+UPDATE audiobooks 
+SET 
+    book_size = totals.sz,
+    duration = totals.dur
+FROM totals
+WHERE audiobooks.id = totals.book_id;
+    "#,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn insert_new_files_from_cache(pool: &SqlitePool) -> Result<(), ApiError> {
     sqlx::query(
         r#"
-        INSERT OR IGNORE INTO files (book_id, file_id, file_name, file_path, duration, channels, sample_rate, bitrate) 
+        INSERT OR IGNORE INTO files (book_id, file_id, file_name, file_path, duration, file_size, channels, sample_rate, bitrate) 
         SELECT
             ab.id AS book_id,
             fsc.id AS file_id,
             fsc.file_name,
             fsc.file_path,
             fsc.duration,
+            fsc.file_size,
             fsc.channels,
             fsc.sample_rate,
             fsc.bitrate
@@ -296,7 +322,7 @@ fn bind_ids<'a>(
 pub async fn save_user_file_org_changes_filescan_cache(
     pool: &SqlitePool,
     changes: Vec<ChangeDto>,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), ApiError> {
     let fsc_q: &'static str = "UPDATE file_scan_cache SET resolve_status = 2,";
     let abk_q = "UPDATE audiobooks SET ";
     let files_q = "UPDATE files SET ";
@@ -452,5 +478,7 @@ pub async fn save_user_file_org_changes_filescan_cache(
             }
         }
     }
+
+    update_duration_file_sz(pool).await?;
     Ok(())
 }

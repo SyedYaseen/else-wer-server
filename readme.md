@@ -116,30 +116,13 @@ curl -X POST http://localhost:3000/api/upload \
 ## Deploy notes
 Static build
 cross build --target armv7-unknown-linux-musleabihf --release &&
-scp target/armv7-unknown-linux-musleabihf/release/else-wer yaseen@192.168.1.22:/home/yaseen/
-scp .env yaseen@192.168.1.22:/home/yaseen/
+scp target/armv7-unknown-linux-musleabihf/release/else-wer .env.pi pi@192.168.1.5:/home/pi/
+scp .env.pi pi@192.168.1.5:/home/pi/
 
-## Mount device on pi
-DISK=$(lsblk -o NAME,TRAN,TYPE -n | awk '$2=="usb" && $3=="disk" {print $1; exit}')
-if [ -z "$DISK" ]; then
-    echo "No USB disk detected"
-    exit 1
-fi
-
-PART="/dev/${DISK}2"
-MOUNTPOINT=/home/yaseen/drv
-
-# Create mount directory
-sudo mkdir -p $MOUNTPOINT
-
-# Mount
-sudo mount $PART $MOUNTPOINT
-
-echo "Mounted $PART at $MOUNTPOINT"
-
-
+## Kitty terminal
+echo 'export TERM=xterm-256color' >> '~/.bashrc'
 
 Books loc:
-/home/yaseen/drv/AudioBooks
+/home/pi/drv/AudioBooks
 
-ssh yaseen@192.168.1.22
+ssh pi@192.168.1.5
