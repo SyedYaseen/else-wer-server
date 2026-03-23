@@ -1,3 +1,4 @@
+use axum::extract::path;
 use futures::{StreamExt, stream};
 use std::{
     fs::File,
@@ -174,6 +175,7 @@ async fn capture_file_paths(path_str: &str) -> Vec<PathBuf> {
 }
 
 pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError> {
+    println!("ABS LOC: {:#?}", path_str);
     let scan_cache = Arc::new(RwLock::new(fetch_all_stage_file_paths(db).await?));
     let fsc_metadatas: Arc<RwLock<Vec<FileScanCache>>> = Arc::new(RwLock::new(Vec::new()));
     let paths = capture_file_paths(path_str).await;

@@ -2,6 +2,20 @@ use sqlx::{Pool, Sqlite};
 
 use crate::models::user::{Progress, ProgressUpdate};
 
+pub async fn list_inprogress_db(db: &Pool<Sqlite>, user_id: i64) -> sqlx::Result<Vec<Progress>> {
+    sqlx::query_as::<_, Progress>(
+        r#"
+    SELECT id, user_id, book_id, file_id, progress_ms, complete, updated_at
+    FROM progress
+    WHERE user_id = ?1
+    ORDER BY updated_at DESC
+    "#,
+    )
+    .bind(user_id)
+    .fetch_all(db)
+    .await
+}
+
 pub async fn get_progress_by_fileid(
     db: &Pool<Sqlite>,
     user_id: i64,

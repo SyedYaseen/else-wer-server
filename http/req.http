@@ -1,0 +1,142 @@
+### Variables
+@base_url = http://localhost:3000/api
+# @base_url = http://localhost:3000/api
+@admin_token = {{elsewer_token_admin}}
+
+@token = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NzQwMjEwNTUsImlhdCI6MTc3MzkzNDY1NX0.LquTS8w-2_kj71B_-qg4f9GmAfaQs0pDRVe2UBWt7pw
+
+# @name hello
+GET {{base_url}}/hello
+
+###
+### Group: Auth
+###
+
+# @name login
+POST {{base_url}}/login
+Content-Type: application/json
+
+{
+    "username": "admin", 
+    "password": "admin"
+}
+
+###
+@admin_token = {{login.response.body.token}}
+
+###
+# @name inprogress
+GET {{base_url}}/list_inprogress
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+###
+# @name updateProgress
+POST {{base_url}}/update_progress
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+{"book_id":33,"file_id":32,"progress_ms":10687,"complete":false}
+
+# @name create_user
+POST {{base_url}}/create_user
+Authorization: Bearer {{user_token}}
+Content-Type: application/json
+
+{
+    "username": "valerie", 
+    "password": "mypassword", 
+    "is_admin": false
+}
+
+###
+### Group: Organize
+###
+
+# @name file_metadata
+GET {{base_url}}/file_metadata/51577
+Authorization: Bearer {{admin_token}}
+
+###
+
+# @name scan_files
+GET {{base_url}}/scan_files
+Authorization: Bearer {{admin_token}}
+
+###
+
+# @name organize_books
+POST {{base_url}}/confirm_bookscan
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+[
+    {
+        "change_type": "merge-title",
+        "file_ids": [26356, 26380, 26371],
+        "current_author": "agatha christie",
+        "new_author": "adrian tchaikovsky",
+        "current_series": "A Caribbean Mystery",
+        "new_series": "Merged"
+    },
+    {
+        "change_type": "merge-title",
+        "file_ids": [26351, 26376],
+        "current_author": "agatha christie",
+        "new_author": "adrian tchaikovsky",
+        "current_series": "A Murder is Announced",
+        "new_series": "Merged"
+    },
+    {
+        "change_type": "move-title",
+        "current_author": "agatha christie",
+        "new_author": "adrian tchaikovsky",
+        "file_ids": [26353, 26368]
+    }
+]
+
+###
+### Group: Up/Download
+###
+
+# @name download_book
+GET {{base_url}}/download_book/7
+Authorization: Bearer {{user_token}}
+
+###
+
+# @name download_head
+HEAD {{base_url}}/download_chunk/50999
+Authorization: Bearer {{admin_token}}
+
+###
+
+# @name download_chunk
+GET {{base_url}}/download_chunk/2?index=1&size=1024
+Authorization: Bearer {{admin_token}}
+
+###
+
+# @name upload_files
+POST {{base_url}}/upload
+Authorization: Bearer {{user_token}}
+Content-Type: multipart/form-data
+
+< ./path/to/your/file.epub
+
+###
+### Group: Thirdparty Library
+###
+
+# @name google_books
+GET https://www.googleapis.com/books/v1/volumes?key=AIzaSyAw8qmNMo-PVZDBljHl5hwzAV3oH1KBEIw&q=intitle:Abaddons+inauthor:James
+
+###
+
+# @name openlibrary_author
+GET https://openlibrary.org/search/authors.json?q=james%20corey
+
+###
+
+# @name openlibrary_search
+GET https://openlibrary.org/search.json?q=abadonns

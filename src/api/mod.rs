@@ -19,7 +19,7 @@ use crate::{
             list_books_handler, list_scanned_files_handler, save_organized_files_handler,
             upload_handler,
         },
-        sync::{get_book_progress, get_file_progress, update_progress},
+        sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
         user::{create_user, login},
     },
 };
@@ -46,6 +46,7 @@ pub async fn routes() -> Router<AppState> {
         )
         .route("/file_metadata/{book_id}", get(file_metadata_handler))
         // Sync
+        .route("/list_inprogress", get(list_inprogress))
         .route(
             "/get_file_progress/{book_id}/{file_id}",
             get(get_file_progress),

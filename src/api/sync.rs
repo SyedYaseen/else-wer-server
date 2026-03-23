@@ -1,8 +1,10 @@
 use crate::{
     AppState,
     api::{api_error::ApiError, auth_extractor::AuthUser},
-    db::sync::{get_progress_by_bookid, get_progress_by_fileid, upsert_progress},
-    models::user::ProgressUpdate,
+    db::sync::{
+        get_progress_by_bookid, get_progress_by_fileid, list_inprogress_db, upsert_progress,
+    },
+    models::user::{Progress, ProgressUpdate},
 };
 use Result::Ok;
 use axum::{
@@ -11,6 +13,19 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+
+pub async fn list_inprogress(
+    State(state): State<AppState>,
+    AuthUser(claims): AuthUser,
+) -> impl IntoResponse {
+    match list_inprogress_db(&state.db_pool, claims.sub).await {
+        Ok(progress) => Json(progress).into_response(),
+        Err(e) => {
+            eprintln!("Err fetching inp progress books: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response()
+        }
+    }
+}
 
 pub async fn get_file_progress(
     State(state): State<AppState>,
