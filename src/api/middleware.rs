@@ -1,6 +1,10 @@
-use axum::{extract::FromRequestParts, http::request::Parts};
+use axum::{
+    extract::{FromRef, FromRequestParts},
+    http::request::Parts,
+};
 
 use crate::{
+    AppState,
     api::{api_error::ApiError, auth_extractor::AuthUser},
     models::user::Claims,
 };
@@ -9,6 +13,7 @@ pub struct AdminUser(pub Claims);
 
 impl<S> FromRequestParts<S> for AdminUser
 where
+    AppState: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = ApiError;

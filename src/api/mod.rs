@@ -2,7 +2,7 @@ use axum::{
     Router,
     extract::{DefaultBodyLimit, State},
     response::{Html, IntoResponse},
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use tower_http::services::ServeDir;
 pub mod api_error;
@@ -15,12 +15,12 @@ use crate::{
     AppState,
     api::{
         audiobooks::{
-            download_book, download_chunk, file_metadata_handler, get_file_size,
-            list_books_handler, list_scanned_files_handler, save_organized_files_handler,
+            download_book, file_metadata_handler, list_books_handler,
+            list_scanned_files_handler, save_organized_files_handler, stream_file,
             upload_handler,
         },
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
-        user::{create_user, login},
+        user::{change_password, create_user, login},
     },
 };
 
@@ -40,10 +40,7 @@ pub async fn routes() -> Router<AppState> {
         .route("/list_books", get(list_books_handler))
         // Files
         .route("/download_book/{book_id}", get(download_book)) // TODO: This might be obsolete
-        .route(
-            "/download_chunk/{file_id}",
-            get(download_chunk).head(get_file_size),
-        )
+        .route("/stream/{id}", get(stream_file)) // GET also matches HEAD; ServeFile handles it
         .route("/file_metadata/{book_id}", get(file_metadata_handler))
         // Sync
         .route("/list_inprogress", get(list_inprogress))
@@ -55,6 +52,7 @@ pub async fn routes() -> Router<AppState> {
         .route("/update_progress", post(update_progress))
         // User
         .route("/create_user", post(create_user))
+        .route("/user/change_password", put(change_password))
         .route("/login", post(login))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 10))
 }

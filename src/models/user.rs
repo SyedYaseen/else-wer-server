@@ -15,6 +15,12 @@ pub struct LoginDto {
     pub password: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChangePasswordDto {
+    pub username: String,
+    pub new_password: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct User {
     pub id: i64,

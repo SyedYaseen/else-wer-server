@@ -6,7 +6,7 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub audiobook_location: String,
-    pub jwt_secret: anyhow::Result<String>,
+    pub jwt_secret: String,
     pub self_hosted: bool,
     pub jwt_loc: String,
     pub relay_uri: String,
@@ -24,7 +24,7 @@ impl Config {
                 .unwrap_or(3000),
             audiobook_location: env::var("AUDIOBOOKS_LOCATION")
                 .unwrap_or_else(|_| "data".to_string()),
-            jwt_secret: env::var("JWT_SECRET").with_context(|| "Please set JWT SECRET"),
+            jwt_secret: env::var("JWT_SECRET").with_context(|| "Please set JWT_SECRET")?,
             self_hosted: env::var("SELF_HOSTED")
                 .map(|v| v.to_lowercase() == "true" || v == "1")
                 .unwrap_or(true),

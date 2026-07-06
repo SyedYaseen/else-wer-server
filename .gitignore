@@ -13,3 +13,4 @@ datatest
 bookresmultipart.json
 .gitignore
 /audiobooks
+graphify-out/

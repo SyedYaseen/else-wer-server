@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 
 use crate::api::api_error::ApiError;
@@ -7,7 +6,7 @@ use crate::db::user::{self, get_user_by_username};
 use crate::models::user::{Claims, User};
 use crate::{
     AppState,
-    models::user::{LoginDto, UserDto},
+    models::user::{ChangePasswordDto, LoginDto, UserDto},
 };
 use argon2::{
     Argon2,
@@ -40,6 +39,37 @@ pub async fn create_user(
     ))
 }
 
+// Admin-only: change any user's password (needed since the default admin
+// account otherwise has no way to ever change its own password).
+pub async fn change_password(
+    AdminUser(_claims): AdminUser,
+    State(state): State<AppState>,
+    Json(payload): Json<ChangePasswordDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+
+    if payload.new_password.is_empty() {
+        return Err(ApiError::BadRequest("Provide a new password".into()));
+    }
+
+    let target = get_user_by_username(db, &payload.username)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("User not found".to_string()))?;
+
+    let argon2 = Argon2::default();
+    let salt = SaltString::generate(&mut OsRng);
+    let password_hash = argon2
+        .hash_password(payload.new_password.as_bytes(), &salt)?
+        .to_string();
+
+    user::update_user_password(db, target.id, &password_hash, &salt.to_string()).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "message": format!("Password updated for {}", target.username) })),
+    ))
+}
+
 pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, ApiError> {
     let argon2 = Argon2::default();
     let password_bytes = &user.password.clone().into_bytes();
@@ -69,14 +99,14 @@ pub async fn login(
     let config = &state.config;
     let mut token: String = "".to_string();
     if config.self_hosted {
-        let jwt = config.jwt_secret.as_ref().unwrap().as_bytes(); // TODO: Handle unwrap properly
+        let jwt = config.jwt_secret.as_bytes();
         token = auth_and_issue_jwt(&payload, db, jwt).await?;
     } else {
         token = get_relay_token(state.clone(), &payload).await?;
         let token_path = Path::new(&config.jwt_loc).parent();
         if let Some(path) = token_path {
-            println!("Parent path is: {:#?}", path);
-            fs::create_dir_all(path)?;
+            tracing::debug!("Parent path is: {:#?}", path);
+            tokio::fs::create_dir_all(path).await?;
             tokio::fs::write(&config.jwt_loc, token.clone()).await?;
         }
     }
@@ -89,9 +119,11 @@ async fn auth_and_issue_jwt(
     db: &Pool<Sqlite>,
     jwt_secret: &[u8],
 ) -> Result<String, ApiError> {
+    // Same error for "user doesn't exist" and "wrong password" below —
+    // distinguishing them lets an attacker enumerate valid usernames.
     let user = get_user_by_username(db, &user_input.username)
         .await?
-        .ok_or_else(|| ApiError::BadRequest("User not found".to_string()))?;
+        .ok_or_else(|| ApiError::Unauthorized("Invalid credentials".to_string()))?;
 
     let parsed_hash = PasswordHash::new(&user.password_hash)?;
     Argon2::default().verify_password(user_input.password.as_bytes(), &parsed_hash)?;
@@ -131,7 +163,7 @@ async fn get_relay_token(state: AppState, payload: &LoginDto) -> Result<String, 
 
     let relay_token: String = res.json::<serde_json::Value>().await?["token"]
         .as_str()
-        .unwrap()
+        .ok_or_else(|| ApiError::Internal("Relay response missing token".into()))?
         .to_string();
 
     Ok(relay_token)

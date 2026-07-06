@@ -21,7 +21,7 @@ pub async fn list_inprogress(
     match list_inprogress_db(&state.db_pool, claims.sub).await {
         Ok(progress) => Json(progress).into_response(),
         Err(e) => {
-            eprintln!("Err fetching inp progress books: {}", e);
+            tracing::error!("Err fetching inp progress books: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response()
         }
     }
@@ -36,7 +36,7 @@ pub async fn get_file_progress(
         Ok(Some(progress)) => Json(progress).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "Progress not found").into_response(),
         Err(e) => {
-            eprintln!("DB error fetching progress: {e}");
+            tracing::error!("DB error fetching progress: {e}");
             (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response()
         }
     }
@@ -50,7 +50,7 @@ pub async fn get_book_progress(
     match get_progress_by_bookid(&state.db_pool, claims.sub, book_id).await {
         Ok(rows) => Json(rows).into_response(),
         Err(e) => {
-            eprintln!("DB error fetching progress: {e}");
+            tracing::error!("DB error fetching progress: {e}");
             (StatusCode::INTERNAL_SERVER_ERROR, "DB error").into_response()
         }
     }
@@ -61,15 +61,20 @@ pub async fn update_progress(
     AuthUser(claims): AuthUser, // this needs to be in middle. Axum wants in this order
     Json(payload): Json<ProgressUpdate>,
 ) -> Result<impl IntoResponse, ApiError> {
-    println!("👉 Incoming update payload: {:#?}", payload);
+    tracing::debug!("Incoming update payload: {:#?}", payload);
 
     upsert_progress(&state.db_pool, claims.sub, &payload)
         .await
         .map_err(|e| {
-            println!("🚨 Upsert Error: {e}");
+            tracing::error!("Upsert Error: {e}");
+            if e.as_database_error()
+                .is_some_and(|de| de.is_foreign_key_violation())
+            {
+                return ApiError::NotFound("Book or file not found".into());
+            }
             ApiError::Internal("Upsert failed".into())
         })?;
 
-    println!("✅ Upsert succeeded");
+    tracing::debug!("Upsert succeeded");
     Ok(StatusCode::ACCEPTED)
 }

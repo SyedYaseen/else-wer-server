@@ -245,7 +245,7 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError
     let mut count = 0;
     if !metadatas.is_empty() {
         for chunk in metadatas.chunks(CHUNK_SIZE) {
-            count += sync_disk_db_state(db, chunk).await.unwrap();
+            count += sync_disk_db_state(db, chunk).await?;
         }
     }
 

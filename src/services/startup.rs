@@ -3,7 +3,6 @@ use crate::api::user::save_pwd_hash;
 use crate::db::user::admin_exists;
 use crate::models::user::UserDto;
 use sqlx::sqlite::SqlitePool;
-use tracing::info;
 use tracing_appender::rolling::{self};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::UtcTime;
@@ -55,7 +54,9 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<(), ApiError> {
         };
         save_pwd_hash(&admin, db).await?;
 
-        info!("Admin user created: username='admin'");
+        tracing::warn!(
+            "Admin user created with default credentials username='admin' password='admin' — change this password immediately via PUT /api/user/change_password"
+        );
     }
 
     Ok(())

@@ -145,36 +145,39 @@ pub async fn get_files_by_book_id(
 
     let files = rows
         .into_iter()
-        .map(|r| FileMetadata {
-            id: r.id.expect("Id doesnt exist"),
-            data: CreateFileMetadata {
-                book_id: r.book_id,
-                file_id: Some(r.file_id),
-                file_name: r.file_name,
-                file_size: r.file_size,
-                file_path: r.file_path,
-                duration: r.duration,
-                channels: r.channels,
-                sample_rate: r.sample_rate,
-                bitrate: r.bitrate,
-            },
+        .map(|r| {
+            Ok(FileMetadata {
+                id: r
+                    .id
+                    .ok_or_else(|| ApiError::Internal("file row missing id".into()))?,
+                data: CreateFileMetadata {
+                    book_id: r.book_id,
+                    file_id: Some(r.file_id),
+                    file_name: r.file_name,
+                    file_size: r.file_size,
+                    file_path: r.file_path,
+                    duration: r.duration,
+                    channels: r.channels,
+                    sample_rate: r.sample_rate,
+                    bitrate: r.bitrate,
+                },
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, ApiError>>()?;
 
     Ok(files)
 }
 
-pub async fn get_file_path(db: &Pool<Sqlite>, file_id: i64) -> Result<String, ApiError> {
+pub async fn get_file_path_by_id(db: &Pool<Sqlite>, id: i64) -> Result<String, ApiError> {
     let path: (String,) = sqlx::query_as(
         r#"
         SELECT
             file_path
         FROM files
-        WHERE file_id = ?
-        ORDER BY id
+        WHERE id = ?
         "#,
     )
-    .bind(file_id)
+    .bind(id)
     .fetch_one(db)
     .await?;
 
