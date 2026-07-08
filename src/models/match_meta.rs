@@ -19,6 +19,8 @@ pub struct MatchCandidate {
     pub asin: Option<String>,
     #[serde(default)]
     pub cover_url: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
     /// Similarity of candidate title+author vs the book's, computed server-side on GET.
     #[serde(default)]
     pub confidence: f64,

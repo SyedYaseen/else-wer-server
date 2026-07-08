@@ -9,7 +9,7 @@ pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiE
         r#"
         SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
                b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, s.name AS series_name
+               b.user_locked, b.description, s.name AS series_name
         FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
         ORDER BY b.author, b.series, b.title
         "#,
@@ -25,7 +25,7 @@ pub async fn get_book(db: &Pool<Sqlite>, book_id: i64) -> Result<AudioBookRow, A
         r#"
         SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
                b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, s.name AS series_name
+               b.user_locked, b.description, s.name AS series_name
         FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
         WHERE b.id = ?1
         "#,
@@ -49,6 +49,26 @@ pub async fn update_cover_art(
         WHERE id = ?2
         "#,
         cover_link,
+        book_id
+    )
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn update_description(
+    db: &Pool<Sqlite>,
+    book_id: i64,
+    description: &str,
+) -> Result<(), ApiError> {
+    sqlx::query!(
+        r#"
+        UPDATE audiobooks
+        SET description = ?1
+        WHERE id = ?2
+        "#,
+        description,
         book_id
     )
     .execute(db)

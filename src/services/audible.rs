@@ -23,6 +23,10 @@ struct Product {
     series: Vec<SeriesEntry>,
     release_date: Option<String>,
     product_images: Option<serde_json::Value>,
+    // product_desc response group; publisher_summary is the fuller description when
+    // present, merchandising_summary is the shorter teaser Audible always returns.
+    publisher_summary: Option<String>,
+    merchandising_summary: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -82,6 +86,7 @@ fn to_candidate(p: Product) -> Option<MatchCandidate> {
             .and_then(|y| y.parse().ok()),
         asin: p.asin,
         cover_url: largest_image(p.product_images),
+        description: p.publisher_summary.or(p.merchandising_summary),
         confidence: 0.0,
     })
 }
@@ -112,7 +117,8 @@ mod tests {
                 "narrators": [{"name": "Martin Shaw"}],
                 "series": [{"title": "The Lord of the Rings", "sequence": "0"}],
                 "release_date": "2008-08-12",
-                "product_images": {"500": "https://img/500.jpg", "1024": "https://img/1024.jpg"}
+                "product_images": {"500": "https://img/500.jpg", "1024": "https://img/1024.jpg"},
+                "merchandising_summary": "The forerunner to The Lord of the Rings."
             }, {
                 "asin": "B0XXNOTITLE",
                 "authors": [],
@@ -136,5 +142,6 @@ mod tests {
         assert_eq!(c.year, Some(2008));
         assert_eq!(c.asin.as_deref(), Some("B002V0QK4C"));
         assert_eq!(c.cover_url.as_deref(), Some("https://img/1024.jpg"));
+        assert_eq!(c.description.as_deref(), Some("The forerunner to The Lord of the Rings."));
     }
 }

@@ -18,6 +18,7 @@ pub struct AudioBookRow {
     pub narrated_by: Option<String>,
     pub series_name: Option<String>,
     pub user_locked: bool,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

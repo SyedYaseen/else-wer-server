@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     api::{api_error::ApiError, auth_extractor::AuthUser},
-    db::audiobooks::{get_book, list_all_books, update_cover_art},
+    db::audiobooks::{get_book, list_all_books, update_cover_art, update_description},
     db::series::{get_book_title_author, set_book_match, upsert_series},
     file_ops::{book_cover::download_cover, book_meta_file::write_book_meta_json, meta_cleanup::fold_key},
     models::match_meta::{ApplyMatchDto, MatchCandidate},
@@ -127,6 +127,12 @@ pub async fn apply_book_match(
                 Ok(None) => {}
                 Err(e) => tracing::warn!("Failed to download cover art for book {book_id}: {e}"),
             }
+        }
+    }
+
+    if let Some(description) = candidate.description.as_deref() {
+        if let Err(e) = update_description(db, book_id, description).await {
+            tracing::warn!("Failed to save description for book {book_id}: {e}");
         }
     }
 
