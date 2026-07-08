@@ -1,4 +1,4 @@
-use crate::api::auth_extractor::AuthUser;
+use crate::api::auth_extractor::{AuthUser, StreamAuth};
 use crate::db::audiobooks::{get_file_path_by_id, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
@@ -316,7 +316,7 @@ fn audio_mime(path: &str) -> &'static str {
 // used by both app streaming playback and the chunked download manager.
 pub async fn stream_file(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    StreamAuth(_claims): StreamAuth,
     Path(id): Path<i64>,
     req: Request, // must stay last (FromRequest) — forwards the Range header to ServeFile
 ) -> Result<impl IntoResponse, ApiError> {

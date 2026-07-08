@@ -1,8 +1,9 @@
 use crate::{
     AppState,
     api::{api_error::ApiError, auth_extractor::AuthUser},
+    db::audiobooks::{get_book, list_all_books, update_cover_art},
     db::series::{get_book_title_author, set_book_match, upsert_series},
-    file_ops::{book_meta_file::write_book_meta_json, meta_cleanup::fold_key},
+    file_ops::{book_cover::download_cover, book_meta_file::write_book_meta_json, meta_cleanup::fold_key},
     models::match_meta::{ApplyMatchDto, MatchCandidate},
     services::audible,
 };
@@ -21,6 +22,12 @@ pub struct MatchQuery {
     /// Optional search override when the stored title is too mangled to match.
     q: Option<String>,
 }
+
+// Only auto-attach a bulk-backfilled cover when the candidate is a confident match —
+// there's no per-book human confirmation in this path, unlike the manual match sheet.
+const MIN_BACKFILL_CONFIDENCE: f64 = 0.5;
+// Space out Audible search calls during a bulk backfill to avoid rate limiting.
+const BACKFILL_DELAY: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// Similarity of a candidate against the book's title+author. 1.0 = identical.
 fn candidate_confidence(candidate: &MatchCandidate, title: &str, author: &str) -> f64 {
@@ -79,7 +86,7 @@ pub async fn apply_book_match(
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
     // 404 before writing anything.
-    get_book_title_author(db, book_id).await?;
+    let book = get_book(db, book_id).await?;
 
     let candidate = &payload.candidate;
 
@@ -109,6 +116,20 @@ pub async fn apply_book_match(
     )
     .await?;
 
+    if book.cover_art.is_none() {
+        if let Some(cover_url) = candidate.cover_url.as_deref() {
+            match download_cover(cover_url, &book).await {
+                Ok(Some(cover_link)) => {
+                    if let Err(e) = update_cover_art(db, book_id, cover_link).await {
+                        tracing::warn!("Failed to save cover_art for book {book_id}: {e}");
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => tracing::warn!("Failed to download cover art for book {book_id}: {e}"),
+            }
+        }
+    }
+
     // Persist the applied match next to the audio files (portable across DB wipes).
     write_book_meta_json(db, book_id).await?;
 
@@ -119,5 +140,65 @@ pub async fn apply_book_match(
             "book_id": book_id,
             "series_id": series_id,
         })),
+    ))
+}
+
+// Find every book with no cover art, search Audible for a confident match, and
+// download+link its cover. Sequential with a delay between books to avoid rate limiting.
+// Never touches title/author/series — only fills in a missing cover_art.
+pub async fn backfill_covers(
+    State(state): State<AppState>,
+    AuthUser(_claims): AuthUser,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    let books: Vec<_> = list_all_books(db)
+        .await?
+        .into_iter()
+        .filter(|b| b.cover_art.is_none())
+        .collect();
+
+    let mut updated = 0;
+    let mut skipped = 0;
+    let checked = books.len();
+
+    for book in &books {
+        let result = async {
+            let mut candidates =
+                audible::search_products(&book.title, Some(&book.author)).await?;
+            for c in &mut candidates {
+                c.confidence = candidate_confidence(c, &book.title, &book.author);
+            }
+            candidates.sort_by(|a, b| b.confidence.total_cmp(&a.confidence));
+            let best = candidates
+                .into_iter()
+                .find(|c| c.confidence > MIN_BACKFILL_CONFIDENCE && c.cover_url.is_some());
+            match best {
+                Some(c) => download_cover(c.cover_url.as_deref().unwrap(), book).await,
+                None => Ok(None),
+            }
+        }
+        .await;
+
+        match result {
+            Ok(Some(link)) => {
+                if update_cover_art(db, book.id, link).await.is_ok() {
+                    updated += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            Ok(None) => skipped += 1,
+            Err(e) => {
+                tracing::warn!("backfill_covers: failed for book {}: {e}", book.id);
+                skipped += 1;
+            }
+        }
+
+        tokio::time::sleep(BACKFILL_DELAY).await;
+    }
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "checked": checked, "updated": updated, "skipped": skipped })),
     ))
 }

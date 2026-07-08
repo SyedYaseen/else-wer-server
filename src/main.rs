@@ -17,6 +17,7 @@ use services::startup::ensure_admin_user;
 use sqlx::SqlitePool;
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     trace::TraceLayer,
@@ -52,8 +53,15 @@ async fn main() -> anyhow::Result<()> {
         .allow_origin(Any) // allows all origins
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([http::header::CONTENT_TYPE, http::header::AUTHORIZATION]);
+    // Serves the else-wer-pwa static build (embedded, same-origin) at every path not under
+    // /api; unmatched routes fall back to index.html so react-router's client-side routes work.
+    let pwa_index = format!("{}/index.html", config.pwa_dist_location);
+    let spa_service = ServeDir::new(&config.pwa_dist_location)
+        .not_found_service(ServeFile::new(pwa_index));
+
     let app = Router::new()
         .nest("/api", api::routes().await)
+        .fallback_service(spa_service)
         .with_state(state)
         .layer(
             TraceLayer::new_for_http()

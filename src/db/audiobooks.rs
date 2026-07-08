@@ -20,6 +20,23 @@ pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiE
     Ok(books)
 }
 
+pub async fn get_book(db: &Pool<Sqlite>, book_id: i64) -> Result<AudioBookRow, ApiError> {
+    let book = sqlx::query_as::<_, AudioBookRow>(
+        r#"
+        SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
+               b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
+               b.user_locked, s.name AS series_name
+        FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.id = ?1
+        "#,
+    )
+    .bind(book_id)
+    .fetch_optional(db)
+    .await?;
+
+    book.ok_or_else(|| ApiError::NotFound(format!("No book with id {book_id}")))
+}
+
 pub async fn update_cover_art(
     db: &Pool<Sqlite>,
     book_id: i64,

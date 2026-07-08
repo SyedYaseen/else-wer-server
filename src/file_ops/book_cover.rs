@@ -69,6 +69,32 @@ pub async fn create_cover_link(
     Ok(Some(format!("/covers/{}", link_name)))
 }
 
+/// Download a candidate's cover image and link it in like any other book cover.
+/// Best-effort: callers should treat errors as non-fatal to the calling request.
+pub async fn download_cover(url: &str, book: &AudioBookRow) -> Result<Option<String>, ApiError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let bytes = client.get(url).send().await?.error_for_status()?.bytes().await?;
+
+    let ext = url
+        .split('?')
+        .next()
+        .unwrap_or(url)
+        .rsplit('.')
+        .next()
+        .filter(|e| matches!(e.to_lowercase().as_str(), "jpg" | "jpeg" | "png" | "webp"))
+        .unwrap_or("jpg")
+        .to_lowercase();
+
+    let dest = Path::new(&book.files_location).join(format!("cover.{ext}"));
+    fs::write(&dest, &bytes)
+        .await
+        .map_err(|e| ApiError::IOErrCustom(e.to_string()))?;
+
+    create_cover_link(&dest, &ext, book).await
+}
+
 pub async fn cover_links(db: &SqlitePool) -> Result<(), ApiError> {
     let books = list_all_books(db).await?;
     for book in books {
