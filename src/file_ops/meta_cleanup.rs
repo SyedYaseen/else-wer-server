@@ -1,11 +1,8 @@
-use crate::{
-    api::api_error::ApiError, db::meta_scan::get_grouped_files, models::meta_scan::FileScanCache,
-};
+use crate::{api::api_error::ApiError, models::meta_scan::FileScanCache};
 use lazy_static::lazy_static;
 use regex::Regex;
 use sqlx::SqlitePool;
 use strsim::levenshtein;
-use symphonia::core::meta;
 
 lazy_static! {
     static ref REMOVE_TERMS: Regex = Regex::new(r"(?i)\s*[\(\[]\s*(abridged|unabridged|audible|special edition)\s*[\)\]]").unwrap();
@@ -16,6 +13,9 @@ lazy_static! {
     static ref DISC_ORDER_TOKENS: Regex = Regex::new(r"(?i)\b(?:vol|volume|part|disc)?\s*(-?\d+(?:-\d+)?)\b").unwrap();
 
     static ref PART_REMOVAL: Regex = Regex::new(r"(?i)\b(?:vol|volume|part|disc)[\s._-]*\d+\b|\bdisc\b").unwrap();
+
+    // Trailing paren/bracket may be unclosed in real tags: "j.r.r. tolkien (narr. christopher lee"
+    static ref NARRATOR: Regex = Regex::new(r"(?i)[\(\[,]?\s*(?:narr(?:ated)?\.?\s*(?:by)?|read by)\s+(.+?)[\)\]]?\s*$").unwrap();
 
     // static ref BOOK_ORDER_TOKENS: Regex = Regex::new(r"(?i)\b(?:book|part)?\s*(-?\d+(?:-\d+)?)\b").unwrap();
     // static ref FILE_ORDER_TOKENS: Regex = Regex::new(r"(?i)\b(?:track|episode|ep|part|chapter)?\s*(-?\d+(?:-\d+)?)\b").unwrap();
@@ -111,11 +111,42 @@ fn author_cleanup(metadata: &mut FileScanCache) {
         if is_dramatized(author) {
             metadata.dramatized = true;
         }
+
+        let author = match NARRATOR.captures(author) {
+            Some(caps) => {
+                if metadata.narrated_by.is_none() {
+                    metadata.narrated_by = caps.get(1).map(|m| m.as_str().trim().to_string());
+                }
+                let m = caps.get(0).unwrap();
+                author[..m.start()].to_string()
+            }
+            None => author.clone(),
+        };
+
         clean_author = clean_metadata(&author).0;
     }
     if !clean_author.is_empty() {
         metadata.author = Some(clean_author);
     }
+}
+
+/// Diacritic-folded lowercase key for grouping comparisons only (Húrin == hurin).
+/// Stored display values keep their diacritics.
+pub fn fold_key(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| c.to_lowercase())
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'ö' | 'õ' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ý' | 'ÿ' => 'y',
+            'ñ' => 'n',
+            'ç' => 'c',
+            other => other,
+        })
+        .collect()
 }
 
 /*
@@ -201,6 +232,65 @@ pub async fn grouped_meta_cleanup(db: &SqlitePool) -> Result<(), ApiError> {
     //let grouped_data = group_meta_fetch(db).await?;
     // grouped_data.
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fsc_with_author(author: &str) -> FileScanCache {
+        let mut m = FileScanCache::new("/x/a.mp3".into(), "a.mp3".into(), "/x".into());
+        m.author = Some(author.to_string());
+        m
+    }
+
+    #[test]
+    fn narrator_strip_unclosed_paren() {
+        let mut m = fsc_with_author("j.r.r. tolkien (narr. christopher lee");
+        author_cleanup(&mut m);
+        assert_eq!(m.author.as_deref(), Some("j.r.r. tolkien"));
+        assert_eq!(m.narrated_by.as_deref(), Some("christopher lee"));
+    }
+
+    #[test]
+    fn narrator_strip_closed_paren() {
+        let mut m = fsc_with_author("brandon sanderson (narrated by michael kramer)");
+        author_cleanup(&mut m);
+        assert_eq!(m.author.as_deref(), Some("brandon sanderson"));
+        assert_eq!(m.narrated_by.as_deref(), Some("michael kramer"));
+    }
+
+    #[test]
+    fn narrator_strip_read_by_comma() {
+        let mut m = fsc_with_author("ursula k. le guin, read by rob inglis");
+        author_cleanup(&mut m);
+        assert_eq!(m.author.as_deref(), Some("ursula k. le guin"));
+        assert_eq!(m.narrated_by.as_deref(), Some("rob inglis"));
+    }
+
+    #[test]
+    fn author_without_narrator_unchanged() {
+        let mut m = fsc_with_author("j.r.r. tolkien");
+        author_cleanup(&mut m);
+        assert_eq!(m.author.as_deref(), Some("j.r.r. tolkien"));
+        assert_eq!(m.narrated_by, None);
+    }
+
+    #[test]
+    fn existing_narrated_by_not_overwritten() {
+        let mut m = fsc_with_author("tolkien narrated by someone else");
+        m.narrated_by = Some("from tag".to_string());
+        author_cleanup(&mut m);
+        assert_eq!(m.narrated_by.as_deref(), Some("from tag"));
+        assert_eq!(m.author.as_deref(), Some("tolkien"));
+    }
+
+    #[test]
+    fn fold_key_diacritics() {
+        assert_eq!(fold_key("Húrin"), "hurin");
+        assert_eq!(fold_key("Türin"), "turin");
+        assert_eq!(fold_key("plain"), "plain");
+    }
 }
 
 // fn assign_track_number(metadata: &mut FileScanCache) {

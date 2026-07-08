@@ -12,40 +12,12 @@ pub struct AudioBookRow {
     pub cover_art: Option<String>,
     pub metadata: Option<String>,
     pub book_size: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AudioBook {
-    pub author: String,
-    pub series: Option<String>,
-    pub title: String,
-    pub content_path: String,
-    pub cover_art: Option<String>,
-    pub duration: i64,
-    pub metadata: Option<String>,
-    pub files: Vec<String>,
-    pub book_size: i64,
-}
-
-impl AudioBook {
-    pub fn new(
-        author: String,
-        series: Option<String>,
-        title: String,
-        content_path: String,
-    ) -> AudioBook {
-        AudioBook {
-            author: author,
-            series: series,
-            title: title,
-            content_path: content_path,
-            cover_art: None,
-            duration: 0,
-            metadata: None,
-            files: Vec::new(),
-            book_size: 0,
-        }
-    }
+    pub series_id: Option<i64>,
+    pub series_sequence: Option<String>,
+    pub asin: Option<String>,
+    pub narrated_by: Option<String>,
+    pub series_name: Option<String>,
+    pub user_locked: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,28 +41,3 @@ pub struct FileMetadata {
 }
 
 pub type CreateFileMetadata = BaseFileMetadata;
-
-impl CreateFileMetadata {
-    pub fn new(
-        file_path: String,
-        file_id: Option<i64>,
-        file_name: String,
-        duration: Option<i64>,
-        channels: Option<i64>,
-        sample_rate: Option<i64>,
-        bitrate: Option<i64>,
-        file_size: Option<i64>,
-    ) -> CreateFileMetadata {
-        CreateFileMetadata {
-            book_id: -99,
-            file_id: file_id,
-            file_name: file_name,
-            file_path: file_path,
-            file_size: file_size,
-            duration: duration,
-            channels: channels,
-            sample_rate: sample_rate,
-            bitrate: bitrate,
-        }
-    }
-}

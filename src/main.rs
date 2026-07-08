@@ -39,7 +39,6 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Err connecting to database");
 
-    // let _ = cleanup(&db_pool).await;
     ensure_admin_user(&db_pool).await.unwrap();
     let _ = scan_files_startup(&config.audiobook_location, &db_pool).await;
 

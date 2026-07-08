@@ -8,6 +8,7 @@ use tower_http::services::ServeDir;
 pub mod api_error;
 mod audiobooks;
 mod auth_extractor;
+mod match_meta;
 mod middleware;
 mod sync;
 pub mod user;
@@ -19,6 +20,7 @@ use crate::{
             list_scanned_files_handler, save_organized_files_handler, stream_file,
             upload_handler,
         },
+        match_meta::{apply_book_match, match_book_candidates},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
         user::{change_password, create_user, login},
     },
@@ -38,6 +40,11 @@ pub async fn routes() -> Router<AppState> {
         .route("/upload", post(upload_handler))
         // Books
         .route("/list_books", get(list_books_handler))
+        // External metadata match (explicit user action; GET is read-only)
+        .route(
+            "/match_book/{book_id}",
+            get(match_book_candidates).post(apply_book_match),
+        )
         // Files
         .route("/download_book/{book_id}", get(download_book)) // TODO: This might be obsolete
         .route("/stream/{id}", get(stream_file)) // GET also matches HEAD; ServeFile handles it

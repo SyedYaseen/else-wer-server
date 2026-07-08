@@ -1,5 +1,5 @@
 use crate::api::auth_extractor::AuthUser;
-use crate::db::audiobooks::{get_file_path, get_files_by_book_id, list_all_books};
+use crate::db::audiobooks::{get_file_path_by_id, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
 use crate::file_ops::org_books::save_organized_books;
@@ -7,25 +7,37 @@ use crate::file_ops::scan_files::scan_files;
 use crate::models::audiobooks::FileMetadata;
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
-use axum::extract::{Multipart, Query};
+use axum::extract::Multipart;
 use axum::{
     Json,
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Request, State},
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
 
-use serde::Deserialize;
 use sqlx::{Pool, Sqlite};
+use tower::util::ServiceExt;
+use tower_http::services::ServeFile;
 
 use serde_json::json;
 use std::io::Write;
 use std::path::PathBuf;
 use tokio::fs::{self, File, create_dir_all, read_dir, remove_dir_all};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
+
+// Reject anything that isn't a bare filename - no directory components at all.
+fn is_safe_filename(name: &str) -> bool {
+    !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
+}
+
+// Reject anything that could escape the upload root (leading slash, `..`, backslashes).
+fn is_safe_relative_path(path: &str) -> bool {
+    !path.is_empty() && !path.starts_with('/') && !path.contains("..") && !path.contains('\\')
+}
+
 pub async fn upload_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
@@ -40,18 +52,55 @@ pub async fn upload_handler(
     let upload_dir = &state.config.audiobook_location;
     let db = &state.db_pool;
 
-    while let Some(field) = multipart.next_field().await.unwrap() {
-        let name = field.name().unwrap().to_string();
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Invalid multipart data: {e}")))?
+    {
+        let name = field
+            .name()
+            .ok_or_else(|| ApiError::BadRequest("Multipart field missing name".into()))?
+            .to_string();
         if name == "file" {
-            file_bytes = Some(field.bytes().await.unwrap().to_vec());
+            file_bytes = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(format!("Invalid file field: {e}")))?
+                    .to_vec(),
+            );
         } else if name == "fileName" {
-            file_name = Some(field.text().await.unwrap());
+            file_name = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(format!("Invalid fileName field: {e}")))?,
+            );
         } else if name == "chunkIndex" {
-            chunk_index = Some(field.text().await.unwrap().parse::<usize>().unwrap());
+            chunk_index = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(format!("Invalid chunkIndex field: {e}")))?
+                    .parse::<usize>()
+                    .map_err(|_| ApiError::BadRequest("chunkIndex must be a number".into()))?,
+            );
         } else if name == "totalChunks" {
-            total_chunks = Some(field.text().await.unwrap().parse::<usize>().unwrap());
+            total_chunks = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(format!("Invalid totalChunks field: {e}")))?
+                    .parse::<usize>()
+                    .map_err(|_| ApiError::BadRequest("totalChunks must be a number".into()))?,
+            );
         } else if name == "folderPath" {
-            folder_path = Some(field.text().await.unwrap());
+            folder_path = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(format!("Invalid folderPath field: {e}")))?,
+            );
         }
     }
 
@@ -62,6 +111,13 @@ pub async fn upload_handler(
     let file_bytes = file_bytes.ok_or(ApiError::BadRequest("Missing file data".to_owned()))?;
     let folder_path = folder_path.ok_or(ApiError::BadRequest("Missing fileName".to_owned()))?;
 
+    if !is_safe_filename(&file_name) {
+        return Err(ApiError::BadRequest("Invalid fileName".into()));
+    }
+    if !is_safe_relative_path(&folder_path) {
+        return Err(ApiError::BadRequest("Invalid folderPath".into()));
+    }
+
     let parts_dir = format!("{upload_dir}/{file_name}.parts");
     // Create temp dir per file
     if chunk_index == 0 {
@@ -71,7 +127,7 @@ pub async fn upload_handler(
     // Save chunk
     let chunk_path = format!("{parts_dir}/{chunk_index}");
     let mut f = File::create(&chunk_path).await?;
-    f.write(&file_bytes).await?;
+    f.write_all(&file_bytes).await?;
 
     let mut item_count = 0;
     let mut entries = read_dir(&parts_dir).await?;
@@ -85,7 +141,7 @@ pub async fn upload_handler(
         create_dir_all(&target_folder).await?;
 
         let final_path = format!("{target_folder}{file_name}");
-        println!("{final_path}");
+        tracing::debug!("{final_path}");
         let mut output = fs::File::create(&final_path).await?;
         for i in 0..total_chunks {
             let chunk_path = format!("{parts_dir}/{i}");
@@ -97,7 +153,7 @@ pub async fn upload_handler(
 
         // cleanup
         remove_dir_all(&parts_dir).await?;
-        println!("✅ File saved to {final_path}");
+        tracing::info!("File saved to {final_path}");
         let count = scan_files(upload_dir, db).await?;
         cover_links(db).await?;
 
@@ -170,7 +226,7 @@ pub async fn save_organized_files_handler(
     Json(payload): Json<Vec<ChangeDto>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
-    let _ = save_organized_books(db, payload).await;
+    save_organized_books(db, payload).await?;
     // cover_links(db).await?;
     Ok((
         StatusCode::OK,
@@ -186,18 +242,12 @@ pub async fn list_books_handler(
     AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
-    match list_all_books(&db).await {
-        Ok(books) => Ok(Json(json!({
-            "message": "Books list",
-            "count": books.len(),
-            "books": books
-        }))),
-        Err(e) => {
-            // Log the detailed error for debugging
-            tracing::error!("Error scanning files: {}", e);
-            Err(ApiError::Internal("Failed to scan audiobooks".to_string()))
-        }
-    }
+    let books = list_all_books(&db).await?;
+    Ok(Json(json!({
+        "message": "Books list",
+        "count": books.len(),
+        "books": books
+    })))
 }
 
 // User downloads entire book
@@ -205,17 +255,8 @@ pub async fn download_book(
     State(state): State<AppState>,
     Path(book_id): Path<i64>,
     AuthUser(_claims): AuthUser,
-) -> impl IntoResponse {
-    let files = match file_metadata(&state.db_pool, book_id).await {
-        Ok(f) => f,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Error retrieving files".to_string(),
-            )
-                .into_response();
-        }
-    };
+) -> Result<impl IntoResponse, ApiError> {
+    let files = file_metadata(&state.db_pool, book_id).await?;
 
     let mut buffer = Vec::new();
     {
@@ -228,85 +269,70 @@ pub async fn download_book(
 
         for file in files {
             let file_name = file.data.file_path.clone();
-            zip.start_file(&file_name, options).unwrap();
+            zip.start_file(&file_name, options)?;
 
             // Read file content asynchronously
             if let Ok(data) = tokio::fs::read(&file_name).await {
-                zip.write_all(&data).unwrap();
+                zip.write_all(&data)?;
             }
         }
-        zip.finish().unwrap();
+        zip.finish()?;
     }
 
     // 3. Create Content-Disposition header
     let disposition_value = format!("attachment; filename=\"book_{}.zip\"", book_id);
 
     // 4. Build the response with headers
-    Response::builder()
+    let response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/zip")
         .header(header::CONTENT_DISPOSITION, disposition_value)
-        .body(Body::from(buffer))
-        .unwrap()
+        .body(Body::from(buffer))?;
+
+    Ok(response)
 }
 
-#[derive(Deserialize)]
-pub struct DownloadParams {
-    start: Option<u64>,
-    end: Option<u64>,
-}
-
-pub async fn get_file_size(
-    State(state): State<AppState>,
-    Path(file_id): Path<i64>,
-) -> Result<impl IntoResponse, ApiError> {
-    let file_path = get_file_path(&state.db_pool, file_id).await?;
-    if !PathBuf::new().join(&file_path).exists() {
-        return Err(ApiError::BadRequest("File not found".into()));
+// Content-Type by extension; mime_guess (used inside ServeFile) doesn't map .m4b,
+// and players are picky about audio mime types.
+fn audio_mime(path: &str) -> &'static str {
+    match std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") | Some("m4b") | Some("mp4") => "audio/mp4",
+        Some("aac") => "audio/aac",
+        Some("flac") => "audio/flac",
+        Some("ogg") | Some("oga") | Some("opus") => "audio/ogg",
+        Some("wav") => "audio/wav",
+        _ => "application/octet-stream",
     }
-
-    let metadata = tokio::fs::metadata(&file_path).await?;
-    let file_size = metadata.len();
-
-    Ok((StatusCode::OK, [("Content-Length", file_size.to_string())]))
 }
 
-pub async fn download_chunk(
+// GET/HEAD /api/stream/{id} — id is the files PK. ServeFile provides RFC 7233
+// Range support (206/416, Accept-Ranges, If-Range, HEAD) with a streamed body;
+// used by both app streaming playback and the chunked download manager.
+pub async fn stream_file(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
-    Query(params): Query<DownloadParams>,
-    Path(file_id): Path<i64>,
+    Path(id): Path<i64>,
+    req: Request, // must stay last (FromRequest) — forwards the Range header to ServeFile
 ) -> Result<impl IntoResponse, ApiError> {
-    let file_path = get_file_path(&state.db_pool, file_id).await?;
-    if !PathBuf::new().join(&file_path).exists() {
-        return Err(ApiError::BadRequest("File not found".into()));
+    let file_path = get_file_path_by_id(&state.db_pool, id).await?;
+    if !PathBuf::from(&file_path).exists() {
+        return Err(ApiError::NotFound("File not found".into()));
     }
 
-    let mut file = File::open(&file_path).await?;
-    let metadata = file.metadata().await?;
-    let file_size = metadata.len();
+    let mime = audio_mime(&file_path)
+        .parse::<mime::Mime>()
+        .map_err(|e| ApiError::Internal(format!("bad mime: {e}")))?;
 
-    let (start, end) = match (params.start, params.end) {
-        (Some(s), Some(e)) if s <= e && e < file_size => (s, e),
-        _ => return Err(ApiError::BadRequest("Invalid range".into())),
-    };
-
-    let chunk_size = end - start + 1;
-    file.seek(SeekFrom::Start(start)).await?;
-    let mut buffer = vec![0; chunk_size as usize];
-    file.read_exact(&mut buffer).await?;
-
-    let content_range = format!("bytes {}-{}/{}", start, end, file_size);
-
-    Ok((
-        StatusCode::PARTIAL_CONTENT,
-        [
-            ("Content-Type", "audio/mpeg".to_owned()),
-            ("Content-Length", chunk_size.to_string()),
-            ("Content-Range", content_range),
-        ],
-        buffer,
-    ))
+    ServeFile::new_with_mime(&file_path, &mime)
+        .oneshot(req)
+        .await
+        .map_err(|e| ApiError::Internal(format!("stream error: {e}")))
 }
 
 pub async fn file_metadata_handler(
@@ -314,10 +340,7 @@ pub async fn file_metadata_handler(
     AuthUser(_claims): AuthUser,
     Path(book_id): Path<i64>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let files = file_metadata(&state.db_pool, book_id).await.map_err(|e| {
-        tracing::error!("Error scanning files: {}", e);
-        ApiError::Internal("Failed to scan audiobooks".to_string())
-    })?;
+    let files = file_metadata(&state.db_pool, book_id).await?;
 
     Ok(Json(json!({
         "message": "",
@@ -326,15 +349,11 @@ pub async fn file_metadata_handler(
     })))
 }
 
-async fn file_metadata(db: &Pool<Sqlite>, book_id: i64) -> anyhow::Result<Vec<FileMetadata>> {
-    let files = get_files_by_book_id(db, book_id).await.map_err(|e| {
-        eprintln!("Error retrieving files from db: {e}");
-        anyhow::anyhow!(e)
-    })?;
+async fn file_metadata(db: &Pool<Sqlite>, book_id: i64) -> Result<Vec<FileMetadata>, ApiError> {
+    let files = get_files_by_book_id(db, book_id).await?;
 
     if files.is_empty() {
-        eprintln!("No files found. BookId {}", book_id);
-        return Err(anyhow::anyhow!(format!(
+        return Err(ApiError::NotFound(format!(
             "No files found. BookId {}",
             book_id
         )));

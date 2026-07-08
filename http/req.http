@@ -1,6 +1,6 @@
 ### Variables
-@base_url = http://localhost:3000/api
 # @base_url = http://localhost:3000/api
+@base_url = http://192.168.1.10:3000/api
 @admin_token = {{elsewer_token_admin}}
 
 @token = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NzQwMjEwNTUsImlhdCI6MTc3MzkzNDY1NX0.LquTS8w-2_kj71B_-qg4f9GmAfaQs0pDRVe2UBWt7pw
@@ -38,14 +38,15 @@ Content-Type: application/json
 
 {"book_id":33,"file_id":32,"progress_ms":10687,"complete":false}
 
+###
 # @name create_user
 POST {{base_url}}/create_user
-Authorization: Bearer {{user_token}}
+Authorization: Bearer {{admin_token}}
 Content-Type: application/json
 
 {
-    "username": "valerie", 
-    "password": "mypassword", 
+    "username": "pappu", 
+    "password": "pappu", 
     "is_admin": false
 }
 
@@ -105,15 +106,16 @@ Authorization: Bearer {{user_token}}
 
 ###
 
-# @name download_head
-HEAD {{base_url}}/download_chunk/50999
+# @name stream_head
+HEAD {{base_url}}/stream/2
 Authorization: Bearer {{admin_token}}
 
 ###
 
-# @name download_chunk
-GET {{base_url}}/download_chunk/2?index=1&size=1024
+# @name stream_range
+GET {{base_url}}/stream/2
 Authorization: Bearer {{admin_token}}
+Range: bytes=0-1023
 
 ###
 
@@ -123,6 +125,37 @@ Authorization: Bearer {{user_token}}
 Content-Type: multipart/form-data
 
 < ./path/to/your/file.epub
+
+###
+### Group: Match (external series metadata)
+###
+
+# @name match_book_candidates
+GET {{base_url}}/match_book/1
+Authorization: Bearer {{admin_token}}
+
+###
+
+# @name match_book_candidates_override
+GET {{base_url}}/match_book/1?q=the silmarillion
+Authorization: Bearer {{admin_token}}
+
+###
+
+# @name apply_book_match
+POST {{base_url}}/match_book/1
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+
+{
+    "title": "The Silmarillion",
+    "author": "J. R. R. Tolkien",
+    "narrator": "Martin Shaw",
+    "series_name": "The Lord of the Rings",
+    "series_sequence": "0",
+    "asin": "B002V0QK4C",
+    "apply_title_author": false
+}
 
 ###
 ### Group: Thirdparty Library

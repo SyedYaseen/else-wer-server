@@ -38,7 +38,7 @@ pub async fn create_cover_link(
 
     if link_path.exists() {
         tracing::info!("Cover art symlink already exists for {}", link_name);
-        return Ok(None);
+        return Ok(Some(format!("/covers/{}", link_name)));
     }
 
     if let Some(parent) = link_path.parent() {
@@ -74,7 +74,7 @@ pub async fn cover_links(db: &SqlitePool) -> Result<(), ApiError> {
     for book in books {
         for entry in WalkDir::new(&book.files_location)
             .contents_first(true)
-            .max_depth(1)
+            .max_depth(2)
         {
             match entry {
                 Ok(file) => {
