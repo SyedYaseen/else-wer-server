@@ -116,7 +116,7 @@ curl -X POST http://localhost:3000/api/upload \
 ## Deploy notes
 Static build
 cross build --target armv7-unknown-linux-musleabihf --release &&
-scp target/armv7-unknown-linux-musleabihf/release/else-wer .env.pi pi@192.168.1.5:/home/pi/
+scp target/armv7-unknown-linux-musleabihf/release/else-wer .env.pi pi@192.168.1.10:/home/pi/
 scp .env.pi pi@192.168.1.5:/home/pi/
 
 ## Kitty terminal

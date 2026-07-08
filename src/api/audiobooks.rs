@@ -28,12 +28,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use zip::CompressionMethod;
 use zip::write::FileOptions;
 
-// Reject anything that isn't a bare filename - no directory components at all.
 fn is_safe_filename(name: &str) -> bool {
     !name.is_empty() && !name.contains('/') && !name.contains('\\') && name != "." && name != ".."
 }
 
-// Reject anything that could escape the upload root (leading slash, `..`, backslashes).
 fn is_safe_relative_path(path: &str) -> bool {
     !path.is_empty() && !path.starts_with('/') && !path.contains("..") && !path.contains('\\')
 }
@@ -104,12 +102,13 @@ pub async fn upload_handler(
         }
     }
 
-    let file_name = file_name.ok_or(ApiError::BadRequest("Missing fileName".to_owned()))?;
-    let chunk_index = chunk_index.ok_or(ApiError::BadRequest("Missing chunkIndex".to_owned()))?;
-    let total_chunks =
-        total_chunks.ok_or(ApiError::BadRequest("Missing totalChunks".to_owned()))?;
-    let file_bytes = file_bytes.ok_or(ApiError::BadRequest("Missing file data".to_owned()))?;
-    let folder_path = folder_path.ok_or(ApiError::BadRequest("Missing fileName".to_owned()))?;
+    let (file_name, chunk_index, total_chunks, file_bytes, folder_path) = (
+        file_name.ok_or_else(|| ApiError::BadRequest("Missing fileName".into()))?,
+        chunk_index.ok_or_else(|| ApiError::BadRequest("Missing chunkIndex".into()))?,
+        total_chunks.ok_or_else(|| ApiError::BadRequest("Missing totalChunks".into()))?,
+        file_bytes.ok_or_else(|| ApiError::BadRequest("Missing file data".into()))?,
+        folder_path.ok_or_else(|| ApiError::BadRequest("Missing folderPath".into()))?,
+    );
 
     if !is_safe_filename(&file_name) {
         return Err(ApiError::BadRequest("Invalid fileName".into()));
@@ -119,6 +118,7 @@ pub async fn upload_handler(
     }
 
     let parts_dir = format!("{upload_dir}/{file_name}.parts");
+
     // Create temp dir per file
     if chunk_index == 0 {
         create_dir_all(&parts_dir).await?;
@@ -141,7 +141,7 @@ pub async fn upload_handler(
         create_dir_all(&target_folder).await?;
 
         let final_path = format!("{target_folder}{file_name}");
-        tracing::debug!("{final_path}");
+        tracing::debug!("File final path: {final_path}");
         let mut output = fs::File::create(&final_path).await?;
         for i in 0..total_chunks {
             let chunk_path = format!("{parts_dir}/{i}");
