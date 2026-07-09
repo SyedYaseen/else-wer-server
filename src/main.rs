@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_origin(Any) // allows all origins
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([http::header::CONTENT_TYPE, http::header::AUTHORIZATION]);
-    // Serves the else-wer-pwa static build (embedded, same-origin) at every path not under
+    // Serves the src/ui static build (same-origin) at every path not under
     // /api; unmatched routes fall back to index.html so react-router's client-side routes work.
     let pwa_index = format!("{}/index.html", config.pwa_dist_location);
     let spa_service = ServeDir::new(&config.pwa_dist_location)

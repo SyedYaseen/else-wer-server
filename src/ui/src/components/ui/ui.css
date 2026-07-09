@@ -1,0 +1,235 @@
+/* Base primitives, proportions ported from else-wer-app/components/ui/* */
+
+.btn {
+  height: 50px;
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-md);
+  border: none;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-ink);
+  color: var(--color-background);
+}
+
+.btn-secondary {
+  background: var(--color-surface-deep);
+  color: var(--color-ink);
+  border: 0.5px solid var(--color-ink-hairline);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink);
+}
+
+.btn-destructive {
+  background: var(--color-danger);
+  color: var(--color-background);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-ink-hairline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-deep);
+  border: 0.5px solid var(--color-ink-hairline);
+  font-size: var(--text-sm);
+  color: var(--color-ink-muted);
+}
+
+.pill-accent {
+  color: var(--color-accent);
+  background: var(--color-accent-muted);
+}
+
+.pill-sage {
+  color: var(--color-sage);
+}
+
+.pill-warning {
+  color: var(--color-warning);
+}
+
+.pill-danger {
+  color: var(--color-danger);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-lg);
+  border-bottom: 0.5px solid var(--color-ink-hairline);
+  margin-bottom: var(--space-lg);
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-sm) 0;
+  margin-bottom: -0.5px;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--color-ink-subtle);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab-active {
+  color: var(--color-ink);
+  border-bottom-color: var(--color-accent);
+}
+
+.progress-track {
+  height: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-ink-hairline);
+  overflow: hidden;
+}
+
+.progress-track.thick {
+  height: 4px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+}
+
+.sheet-panel {
+  width: 100%;
+  max-width: 560px;
+  background: var(--color-surface);
+  border-top: 0.5px solid var(--color-ink-hairline);
+  border-top-left-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-xl);
+  padding: var(--space-xl);
+  box-shadow: var(--shadow-md);
+}
+
+.action-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 0.5px solid var(--color-ink-hairline);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+
+.action-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: var(--space-md);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.action-menu-item:disabled {
+  color: var(--color-ink-muted);
+  cursor: default;
+}
+
+.install-banner {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-surface);
+  border-bottom: 0.5px solid var(--color-ink-hairline);
+  box-shadow: var(--shadow-sm);
+}
+
+.install-banner-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.install-banner span {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+}
+
+.install-banner-close {
+  background: none;
+  border: none;
+  font-size: var(--text-lg);
+  line-height: 1;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  padding: var(--space-xs);
+}
+
+.install-sheet-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  display: block;
+  margin: 0 auto var(--space-lg);
+}
+
+.install-steps {
+  margin: 0 0 var(--space-lg);
+  padding-left: var(--space-lg);
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}

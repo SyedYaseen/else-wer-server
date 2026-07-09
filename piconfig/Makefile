@@ -1,4 +1,4 @@
-# Deploy else-wer-server + else-wer-pwa to the Pi Zero 2 (192.168.1.10, host alias `pi`).
+# Deploy else-wer-server (including its src/ui PWA) to the Pi Zero 2 (192.168.1.10, host alias `pi`).
 # See cmd.md for the original manual steps this replaces.
 #
 # One-time setup on a fresh Pi:
@@ -6,6 +6,8 @@
 # Every deploy after that:
 #   make deploy          # builds + ships server binary and pwa static build, restarts service
 #   make status / logs
+# Local dev:
+#   make dev              # runs the server (cargo run) and PWA (vite dev) side by side
 #
 # NOTE: `sudo systemctl ...` runs over the same key-only ssh used everywhere else here. If your
 # pi user needs a password for sudo, these targets will hang waiting for a TTY prompt. Fix by
@@ -17,11 +19,11 @@ PI             := pi
 REMOTE_HOME    := /home/pi
 REMOTE_PWA_DIR := $(REMOTE_HOME)/else-wer-pwa/dist
 SERVER_DIR     := ..
-PWA_DIR        := ../../else-wer-pwa
+PWA_DIR        := ../src/ui
 TARGET         := aarch64-unknown-linux-gnu
 SERVER_BIN     := $(SERVER_DIR)/target/$(TARGET)/release/else-wer
 
-.PHONY: deploy build-server build-pwa deploy-server deploy-pwa remote-env install-unit logs status
+.PHONY: deploy build-server build-pwa deploy-server deploy-pwa remote-env install-unit logs status dev
 
 deploy: deploy-pwa deploy-server
 
@@ -42,10 +44,18 @@ deploy-pwa: build-pwa remote-env
 	ssh $(PI) 'mkdir -p $(REMOTE_PWA_DIR)'
 	rsync -avz --delete $(PWA_DIR)/dist/ $(PI):$(REMOTE_PWA_DIR)/
 
-# Server defaults PWA_DIST_LOCATION to "../else-wer-pwa/dist" relative to its working dir
+# Server defaults PWA_DIST_LOCATION to "src/ui/dist" relative to its working dir
 # (/home/pi/), which doesn't resolve on the Pi. Point it at the rsynced dir instead, once.
 remote-env:
 	ssh $(PI) 'grep -q "^PWA_DIST_LOCATION=" $(REMOTE_HOME)/.env 2>/dev/null || echo "PWA_DIST_LOCATION=$(REMOTE_PWA_DIR)" >> $(REMOTE_HOME)/.env'
+
+# Runs the server (debug build) and the PWA's vite dev server side by side for local dev.
+# Vite proxies /api to localhost:3000 (see src/ui/vite.config.ts). Ctrl-C kills both.
+dev:
+	@trap 'kill 0' EXIT; \
+	(cd $(SERVER_DIR) && cargo run) & \
+	(cd $(PWA_DIR) && npm run dev) & \
+	wait
 
 install-unit:
 	scp else-wer.service $(PI):/tmp/else-wer.service

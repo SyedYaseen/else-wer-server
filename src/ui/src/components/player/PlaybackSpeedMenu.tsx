@@ -1,0 +1,37 @@
+import { useState } from 'react';
+import { BottomSheet } from '../ui/BottomSheet';
+import { usePlayerStore } from '../../store/player';
+import { setRate } from '../../player/engine';
+import './player.css';
+
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+export function PlaybackSpeedMenu() {
+  const [open, setOpen] = useState(false);
+  const rate = usePlayerStore((s) => s.rate);
+
+  return (
+    <>
+      <button className="player-secondary-btn" onClick={() => setOpen(true)}>
+        <span className="player-speed-label">{rate}x</span>
+      </button>
+      <BottomSheet open={open} onClose={() => setOpen(false)}>
+        <h3 className="sheet-title">Playback speed</h3>
+        <div className="speed-options">
+          {SPEEDS.map((s) => (
+            <button
+              key={s}
+              className={`speed-option ${s === rate ? 'active' : ''}`}
+              onClick={() => {
+                setRate(s);
+                setOpen(false);
+              }}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
+    </>
+  );
+}

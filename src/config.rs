@@ -32,7 +32,7 @@ impl Config {
             jwt_loc: env::var("JWT_LOC").unwrap_or("creds/jwt.key".to_string()),
             relay_uri: env::var("RELAY_URI").unwrap_or("http://localhost:9000/api".to_string()),
             pwa_dist_location: env::var("PWA_DIST_LOCATION")
-                .unwrap_or_else(|_| "../else-wer-pwa/dist".to_string()),
+                .unwrap_or_else(|_| "src/ui/dist".to_string()),
         })
     }
 }
