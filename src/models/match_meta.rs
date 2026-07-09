@@ -13,6 +13,9 @@ pub struct MatchCandidate {
     pub series_name: Option<String>,
     #[serde(default)]
     pub series_sequence: Option<String>,
+    /// ASIN of the series itself (not the book) — stable dedup key across matches.
+    #[serde(default)]
+    pub series_asin: Option<String>,
     #[serde(default)]
     pub year: Option<i64>,
     #[serde(default)]
@@ -34,4 +37,23 @@ pub struct ApplyMatchDto {
     pub candidate: MatchCandidate,
     #[serde(default)]
     pub apply_title_author: bool,
+}
+
+/// POST /assign_series body: manually reconcile books into one series. `series_id`
+/// picks an existing series (wins over `series_name`); a non-empty `series_name`
+/// creates-or-reuses one by name; neither means "remove from series".
+#[derive(Debug, Deserialize)]
+pub struct AssignSeriesDto {
+    #[serde(default)]
+    pub series_id: Option<i64>,
+    #[serde(default)]
+    pub series_name: Option<String>,
+    pub books: Vec<AssignSeriesBook>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignSeriesBook {
+    pub book_id: i64,
+    #[serde(default)]
+    pub sequence: Option<String>,
 }

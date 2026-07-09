@@ -28,6 +28,10 @@ use tracing::{Level, Span, info};
 pub struct AppState {
     pub db_pool: SqlitePool,
     pub config: Arc<Config>,
+    // Guards the bulk metadata backfill: one pass at a time across manual + post-scan triggers.
+    pub backfill_running: Arc<std::sync::atomic::AtomicBool>,
+    // Guards a full library scan: one pass at a time across manual/upload/lazy triggers.
+    pub scan_running: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[tokio::main]
@@ -46,6 +50,8 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db_pool: db_pool,
         config: Arc::clone(&config),
+        backfill_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     let cors = CorsLayer::new()
@@ -116,7 +122,11 @@ async fn main() -> anyhow::Result<()> {
         ))
         .layer(cors);
 
-    let addr: SocketAddr = "0.0.0.0:3000".parse().unwrap();
+    // lookup_host so HOST can be a hostname (e.g. "localhost"), not only an IP literal.
+    let addr: SocketAddr = tokio::net::lookup_host((config.host.as_str(), config.port))
+        .await?
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("HOST '{}' resolved to no address", config.host))?;
     info!(%addr, "listening");
     axum::serve(tokio::net::TcpListener::bind(addr).await.unwrap(), app)
         .with_graceful_shutdown(shutdown_signal())

@@ -40,6 +40,7 @@ struct Contributor {
 struct SeriesEntry {
     title: Option<String>,
     sequence: Option<String>,
+    asin: Option<String>,
 }
 
 /// Search the Audible catalog by title (+ optional author). Empty results are Ok(vec![]).
@@ -78,7 +79,8 @@ fn to_candidate(p: Product) -> Option<MatchCandidate> {
         author: p.authors.into_iter().next().and_then(|c| c.name),
         narrator: p.narrators.into_iter().next().and_then(|c| c.name),
         series_name: series.as_ref().and_then(|s| s.title.clone()),
-        series_sequence: series.and_then(|s| s.sequence),
+        series_sequence: series.as_ref().and_then(|s| s.sequence.clone()),
+        series_asin: series.and_then(|s| s.asin),
         year: p
             .release_date
             .as_deref()
@@ -115,7 +117,7 @@ mod tests {
                 "title": "The Silmarillion",
                 "authors": [{"name": "J. R. R. Tolkien"}],
                 "narrators": [{"name": "Martin Shaw"}],
-                "series": [{"title": "The Lord of the Rings", "sequence": "0"}],
+                "series": [{"title": "The Lord of the Rings", "sequence": "0", "asin": "B005NF6MIQ"}],
                 "release_date": "2008-08-12",
                 "product_images": {"500": "https://img/500.jpg", "1024": "https://img/1024.jpg"},
                 "merchandising_summary": "The forerunner to The Lord of the Rings."
@@ -139,6 +141,7 @@ mod tests {
         assert_eq!(c.narrator.as_deref(), Some("Martin Shaw"));
         assert_eq!(c.series_name.as_deref(), Some("The Lord of the Rings"));
         assert_eq!(c.series_sequence.as_deref(), Some("0"));
+        assert_eq!(c.series_asin.as_deref(), Some("B005NF6MIQ"));
         assert_eq!(c.year, Some(2008));
         assert_eq!(c.asin.as_deref(), Some("B002V0QK4C"));
         assert_eq!(c.cover_url.as_deref(), Some("https://img/1024.jpg"));

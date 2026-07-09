@@ -1,14 +1,15 @@
 use crate::{
     api::api_error::ApiError,
+    db::series::upsert_series,
     file_ops::{
-        book_meta_file::{read_book_meta_json, write_book_meta_json},
+        book_meta_file::{BookMetaFile, read_book_meta_json, write_book_meta_json},
         grouping::{BookGroup, GroupRow, group_files, keys_similar},
         meta_cleanup::fold_key,
     },
-    models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache, ResolvedStatus},
+    models::meta_scan::{ChangeDto, ChangeType, FileInfo, FileScanCache},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqliteConnection, SqlitePool};
 use std::collections::{HashMap, HashSet};
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -16,7 +17,7 @@ pub async fn cache_row_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
     let row = sqlx::query!(
         r#"
         SELECT COUNT(id) as count
-        FROM file_scan_cache
+        FROM files
         "#
     )
     .fetch_one(db)
@@ -31,123 +32,32 @@ pub struct FileScanCacheFilePaths {
     pub file_path: String,
 }
 
-// Init scan / UI upload / Move or Add files on disk
-pub async fn sync_disk_db_state(
-    db: &Pool<Sqlite>,
-    metadata_list: &[FileScanCache],
+/// Group one scan-pass chunk of in-memory file records into books (folder = identity)
+/// and attach their files to `files`. Returns the number of new `files` rows inserted.
+///
+/// scan_files feeds this in 500-row chunks, so a folder can be split across calls:
+/// later chunks re-resolve the same book via files_location + album similarity and
+/// just attach more files. Each chunk's grouping + attach runs in one transaction so a
+/// mid-chunk failure can't leave a book without its files (a clean retry next scan).
+pub async fn group_and_attach_files(
+    db: &SqlitePool,
+    chunk: &[FileScanCache],
 ) -> Result<u64, ApiError> {
-    let count = save_metadata_to_cache(db, metadata_list).await?;
-    let processed_ids = group_and_attach_files(db).await?;
-    update_fsc_resolved_status(db, &processed_ids).await?;
-    update_duration_file_sz(db).await?;
-    Ok(count)
-}
-
-pub async fn save_metadata_to_cache(
-    db: &Pool<Sqlite>,
-    metadata_list: &[FileScanCache],
-) -> Result<u64, ApiError> {
-    if metadata_list.is_empty() {
+    if chunk.is_empty() {
         return Ok(0);
     }
-    let rawmet = "".to_owned();
-    let mut query = String::from(
-        "INSERT OR IGNORE INTO file_scan_cache (
-            author, title, clean_title, file_path, file_name, path_parent,
-            series, clean_series, series_part, cover_art, pub_year, narrated_by,
-            duration, track_number, disc_number, file_size, mime_type, channels,
-            sample_rate, bitrate, dramatized, extracts, raw_metadata,
-            resolve_status, hash
-        ) VALUES ",
-    );
 
-    let mut first = true;
-    for _ in metadata_list {
-        if !first {
-            query.push_str(", ");
-        }
-        first = false;
-        query.push_str(
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        );
-    }
-
-    // Prepare query_with
-    let mut q = sqlx::query_with(&query, sqlx::sqlite::SqliteArguments::default());
-
-    // Bind all values
-    for m in metadata_list.iter() {
-        let res_status = &m.resolve_status;
-        q = q
-            .bind(&m.author)
-            .bind(&m.title)
-            .bind(&m.clean_title)
-            .bind(&m.file_path)
-            .bind(&m.file_name)
-            .bind(&m.path_parent)
-            .bind(&m.series)
-            .bind(&m.clean_series)
-            .bind(&m.series_part)
-            .bind(&m.cover_art)
-            .bind(&m.pub_year)
-            .bind(&m.narrated_by)
-            .bind(&m.duration)
-            .bind(&m.track_number)
-            .bind(&m.disc_number)
-            .bind(&m.file_size)
-            .bind(&m.mime_type)
-            .bind(&m.channels)
-            .bind(&m.sample_rate)
-            .bind(&m.bitrate)
-            .bind(&m.dramatized)
-            .bind(&m.extracts)
-            .bind(&rawmet)
-            .bind(res_status.value())
-            .bind(&m.hash);
-    }
-
-    let result = q.execute(db).await?;
-    Ok(result.rows_affected())
-}
-
-#[derive(FromRow)]
-struct GroupRowDb {
-    id: i64,
-    author: Option<String>,
-    narrated_by: Option<String>,
-    clean_series: Option<String>,
-    clean_title: Option<String>,
-    path_parent: String,
-    cover_art: Option<String>,
-}
-
-/// Group unresolved cache rows into books (folder = identity) and attach their files.
-/// Returns the fsc ids that were processed.
-///
-/// scan_files feeds sync_disk_db_state in 500-row chunks, so a folder can be split
-/// across calls: later chunks re-resolve the same book via files_location + album
-/// similarity and just attach more files.
-pub async fn group_and_attach_files(pool: &SqlitePool) -> Result<Vec<i64>, ApiError> {
-    let rows = sqlx::query_as::<_, GroupRowDb>(
-        r#"
-        SELECT id, author, narrated_by, clean_series, clean_title, path_parent, cover_art
-        FROM file_scan_cache
-        WHERE resolve_status = 0
-        "#,
-    )
-    .fetch_all(pool)
-    .await?;
-
-    let group_rows: Vec<GroupRow> = rows
-        .into_iter()
-        .map(|r| GroupRow {
-            fsc_id: r.id,
-            author: r.author,
-            narrated_by: r.narrated_by,
-            clean_series: r.clean_series,
-            clean_title: r.clean_title,
-            path_parent: r.path_parent,
-            cover_art: r.cover_art,
+    let group_rows: Vec<GroupRow> = chunk
+        .iter()
+        .enumerate()
+        .map(|(i, r)| GroupRow {
+            row_idx: i,
+            author: r.author.clone(),
+            narrated_by: r.narrated_by.clone(),
+            clean_series: r.clean_series.clone(),
+            clean_title: r.clean_title.clone(),
+            path_parent: r.path_parent.clone(),
+            cover_art: r.cover_art.clone(),
         })
         .collect();
 
@@ -161,31 +71,94 @@ pub async fn group_and_attach_files(pool: &SqlitePool) -> Result<Vec<i64>, ApiEr
         *folder_group_count.entry(g.path_parent.clone()).or_default() += 1;
     }
 
-    let mut processed_ids: Vec<i64> = Vec::new();
+    let mut tx = db.begin().await?;
+    let mut attached: u64 = 0;
+    // Series linking needs `db_pool` (upsert_series dedupes across the whole table),
+    // so it runs after commit; collect (book_id, meta) pairs while grouping.
+    let mut pending_series_links: Vec<(i64, BookMetaFile)> = Vec::new();
 
     for mut group in groups {
         let mut lock_book = false;
-        let mut meta_applied = false;
 
-        if folder_group_count.get(&group.path_parent) == Some(&1)
-            && let Some(meta) = read_book_meta_json(&group.path_parent).await
-        {
-            group.title = meta.title;
-            group.author = meta.author;
-            if let Some(series) = meta.series {
+        let meta = if folder_group_count.get(&group.path_parent) == Some(&1) {
+            read_book_meta_json(&group.path_parent).await
+        } else {
+            None
+        };
+
+        if let Some(meta) = &meta {
+            group.title = meta.title.clone();
+            group.author = meta.author.clone();
+            if let Some(series) = meta.series.clone() {
                 group.series = series;
             }
-            group.narrated_by = meta.narrated_by.or(group.narrated_by);
+            group.narrated_by = meta.narrated_by.clone().or(group.narrated_by.take());
             lock_book = meta.user_locked;
-            meta_applied = true;
         }
+        let meta_applied = meta.is_some();
 
-        let book_id = resolve_book_id(pool, &group, lock_book, meta_applied).await?;
-        attach_files(pool, book_id, &group.fsc_ids).await?;
-        processed_ids.extend(&group.fsc_ids);
+        let book_id = resolve_book_id(&mut tx, &group, lock_book, meta_applied).await?;
+        attached += attach_files(&mut tx, book_id, chunk, &group.row_indices).await?;
+        if let Some(meta) = meta {
+            pending_series_links.push((book_id, meta));
+        }
     }
 
-    Ok(processed_ids)
+    update_duration_file_sz(&mut *tx).await?;
+    tx.commit().await?;
+
+    for (book_id, meta) in &pending_series_links {
+        restore_series_link(db, *book_id, meta).await?;
+    }
+
+    Ok(attached)
+}
+
+/// Re-link a book to its real-world series from the folder's metadata.json. Fill-only
+/// (`series_id IS NULL` guard) so a mid-library rescan never regresses a newer DB-side
+/// assignment; touches only series_id/series_sequence/series_locked — resolve_book_id
+/// reads none of these, so scan bucketing is unaffected.
+async fn restore_series_link(
+    pool: &Pool<Sqlite>,
+    book_id: i64,
+    meta: &BookMetaFile,
+) -> Result<(), ApiError> {
+    let name = meta
+        .series_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty());
+
+    match name {
+        Some(name) => {
+            let provider = if meta.series_asin.is_some() { "audible" } else { "user" };
+            let sid = upsert_series(pool, name, provider, meta.series_asin.as_deref()).await?;
+            sqlx::query(
+                r#"
+                UPDATE audiobooks SET series_id = ?, series_sequence = ?, series_locked = ?
+                WHERE id = ? AND series_id IS NULL AND series_locked = 0
+                "#,
+            )
+            .bind(sid)
+            .bind(meta.series_sequence.as_deref())
+            .bind(meta.series_locked)
+            .bind(book_id)
+            .execute(pool)
+            .await?;
+        }
+        // User explicitly cleared the series; keep the auto-pass from re-adding one.
+        None if meta.series_locked => {
+            sqlx::query(
+                "UPDATE audiobooks SET series_locked = 1 WHERE id = ? AND series_id IS NULL",
+            )
+            .bind(book_id)
+            .execute(pool)
+            .await?;
+        }
+        None => {}
+    }
+
+    Ok(())
 }
 
 #[derive(FromRow)]
@@ -202,7 +175,7 @@ struct BookCandidate {
 /// album/title similarity, not first-row. `lock_book`/`from_meta_file` are set when
 /// the group's values came from the folder's metadata.json.
 async fn resolve_book_id(
-    pool: &SqlitePool,
+    conn: &mut SqliteConnection,
     group: &BookGroup,
     lock_book: bool,
     from_meta_file: bool,
@@ -215,7 +188,7 @@ async fn resolve_book_id(
         "#,
     )
     .bind(&group.path_parent)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
 
     let series_key = fold_key(&group.series);
@@ -231,7 +204,7 @@ async fn resolve_book_id(
         // chunk created the book) or restore them from metadata.json — but never
         // touch user-locked rows.
         if !book.user_locked
-            && (group.fsc_ids.len() > 1 || from_meta_file)
+            && (group.row_indices.len() > 1 || from_meta_file)
             && (book.title != group.title || book.author != group.author)
         {
             let update = sqlx::query(
@@ -248,7 +221,7 @@ async fn resolve_book_id(
             .bind(&group.narrated_by)
             .bind(lock_book)
             .bind(book.id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await;
 
             if let Err(e) = update {
@@ -289,34 +262,49 @@ async fn resolve_book_id(
     .bind(&group.cover_art)
     .bind(&group.narrated_by)
     .bind(lock_book)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await?;
 
     Ok(id)
 }
 
-async fn attach_files(pool: &SqlitePool, book_id: i64, fsc_ids: &Vec<i64>) -> Result<(), ApiError> {
-    if fsc_ids.is_empty() {
-        return Ok(());
+/// Insert this group's files as VALUES rows (no more file_scan_cache to SELECT from).
+/// UNIQUE(file_path) makes INSERT OR IGNORE the dedupe for concurrent/duplicate scans.
+/// Returns the number of new rows actually inserted.
+async fn attach_files(
+    conn: &mut SqliteConnection,
+    book_id: i64,
+    chunk: &[FileScanCache],
+    row_indices: &[usize],
+) -> Result<u64, ApiError> {
+    if row_indices.is_empty() {
+        return Ok(0);
     }
 
     let mut qb = QueryBuilder::new(
-        r#"
-        INSERT OR IGNORE INTO files (book_id, file_id, file_name, file_path, duration, file_size, channels, sample_rate, bitrate)
-        SELECT "#,
+        "INSERT OR IGNORE INTO files (book_id, file_name, file_path, duration, file_size, channels, sample_rate, bitrate, track_number, disc_number) ",
     );
-    qb.push_bind(book_id);
-    qb.push(
-        r#", fsc.id, fsc.file_name, fsc.file_path, fsc.duration, fsc.file_size, fsc.channels, fsc.sample_rate, fsc.bitrate
-        FROM file_scan_cache fsc"#,
-    );
-    qb = bind_ids(qb, "fsc.id", fsc_ids);
-    qb.build().execute(pool).await?;
+    qb.push_values(row_indices.iter().map(|&i| &chunk[i]), |mut b, row| {
+        b.push_bind(book_id)
+            .push_bind(&row.file_name)
+            .push_bind(&row.file_path)
+            .push_bind(row.duration)
+            .push_bind(row.file_size)
+            .push_bind(row.channels)
+            .push_bind(row.sample_rate)
+            .push_bind(row.bitrate)
+            .push_bind(row.track_number)
+            .push_bind(row.disc_number);
+    });
 
-    Ok(())
+    let result = qb.build().execute(conn).await?;
+    Ok(result.rows_affected())
 }
 
-async fn update_duration_file_sz(pool: &SqlitePool) -> Result<(), ApiError> {
+async fn update_duration_file_sz<'e, E>(executor: E) -> Result<(), ApiError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     sqlx::query(
         r#"
 WITH totals AS (
@@ -335,39 +323,19 @@ FROM totals
 WHERE audiobooks.id = totals.book_id;
     "#,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
 
     Ok(())
 }
 
-pub async fn update_fsc_resolved_status(
-    db: &SqlitePool,
-    processed_ids: &Vec<i64>,
-) -> Result<(), ApiError> {
-    if processed_ids.is_empty() {
-        return Ok(());
-    }
-
-    let mut qb = QueryBuilder::new(
-        "UPDATE file_scan_cache SET resolve_status = ",
-    );
-    qb.push_bind(ResolvedStatus::AutoResolved.value());
-    qb.push(", updated_at = CURRENT_TIMESTAMP");
-    qb = bind_ids(qb, "id", processed_ids);
-    qb.build().execute(db).await?;
-
-    Ok(())
-}
-
-// Moved files on disk
-pub async fn fetch_all_stage_file_paths(
-    db: &Pool<Sqlite>,
-) -> Result<HashMap<String, i64>, ApiError> {
+// Moved/removed files on disk: current known file_path -> files.id, so scan_files can
+// diff disk paths against it (skip re-probing, detect deletions).
+pub async fn fetch_known_file_paths(db: &Pool<Sqlite>) -> Result<HashMap<String, i64>, ApiError> {
     let rows = sqlx::query_as::<_, FileScanCacheFilePaths>(
         r#"
-        SELECT id, file_path 
-        FROM file_scan_cache
+        SELECT id, file_path
+        FROM files
         "#,
     )
     .fetch_all(db)
@@ -382,49 +350,42 @@ pub async fn fetch_all_stage_file_paths(
     Ok(items)
 }
 
-pub async fn delete_removed_paths_from_cache(
-    db: &Pool<Sqlite>,
-    delete_fsc_ids: &[i64],
-) -> Result<u64, ApiError> {
-    if delete_fsc_ids.is_empty() {
+/// Delete `files` rows no longer present on disk, then any audiobooks left with no
+/// files. `progress` rows cascade via the files(id) ON DELETE CASCADE FK. One
+/// transaction so the two deletes can't observe each other half-done.
+pub async fn delete_removed_files(db: &Pool<Sqlite>, delete_ids: &[i64]) -> Result<u64, ApiError> {
+    if delete_ids.is_empty() {
         return Ok(0);
     }
 
-    let placeholders = std::iter::repeat("?")
-        .take(delete_fsc_ids.len())
-        .collect::<Vec<_>>()
-        .join(", ");
+    let mut tx = db.begin().await?;
 
-    let del_fsc_sql = format!("DELETE FROM file_scan_cache WHERE id IN ({})", placeholders);
-    let del_files_sql = format!("DELETE FROM files WHERE file_id IN ({})", placeholders);
-    let del_books_sql = "
-    DELETE FROM audiobooks
-    WHERE id IN (
-        SELECT b.id
-        FROM audiobooks b
-        LEFT JOIN files f ON b.id = f.book_id
-        WHERE f.book_id IS NULL
-    )";
+    let mut del_files_qb = QueryBuilder::new("DELETE FROM files");
+    del_files_qb = bind_ids(del_files_qb, "id", delete_ids);
+    let df = del_files_qb.build().execute(&mut *tx).await?;
 
-    let mut del_fsc_q = sqlx::query(&del_fsc_sql);
-    let mut del_files_q = sqlx::query(&del_files_sql);
+    let db_del = sqlx::query(
+        r#"
+        DELETE FROM audiobooks
+        WHERE id IN (
+            SELECT b.id
+            FROM audiobooks b
+            LEFT JOIN files f ON b.id = f.book_id
+            WHERE f.book_id IS NULL
+        )
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
 
-    for id in delete_fsc_ids {
-        del_fsc_q = del_fsc_q.bind(id);
-        del_files_q = del_files_q.bind(id);
-    }
+    tx.commit().await?;
 
-    let df = del_files_q.execute(db).await?;
-    let result = del_fsc_q.execute(db).await?;
-    let db_del = sqlx::query(del_books_sql).execute(db).await?;
-
-    println!(
-        "Del files: {} Del Fsc: {} Del Books: {}",
-        df.rows_affected(),
-        result.rows_affected(),
-        db_del.rows_affected()
+    tracing::info!(
+        deleted_files = df.rows_affected(),
+        deleted_books = db_del.rows_affected(),
+        "removed files no longer present on disk"
     );
-    Ok(result.rows_affected())
+    Ok(df.rows_affected())
 }
 
 pub async fn get_grouped_files(
@@ -432,9 +393,8 @@ pub async fn get_grouped_files(
 ) -> Result<HashMap<String, HashMap<String, Vec<FileInfo>>>, ApiError> {
     let rows = sqlx::query_as::<_, FileInfo>(
         r#"
-            SELECT f.file_id as id, b.id as book_id, b.author, f.file_name, b.series, b.title, fsc.path_parent, f.file_path
-            FROM files f JOIN audiobooks b ON f.book_id = b.id
-            JOIN file_scan_cache fsc ON f.file_id = fsc.id;
+            SELECT f.id as id, b.id as book_id, b.author, f.file_name, b.series, b.title, b.files_location as path_parent, f.file_path
+            FROM files f JOIN audiobooks b ON f.book_id = b.id;
         "#
     )
     .fetch_all(db)
@@ -478,7 +438,7 @@ pub async fn get_grouped_files(
 fn bind_ids<'a>(
     mut qb: QueryBuilder<'a, sqlx::Sqlite>,
     id_name: &str,
-    ids: &'a Vec<i64>,
+    ids: &'a [i64],
 ) -> QueryBuilder<'a, sqlx::Sqlite> {
     qb.push(format!(" WHERE {id_name} IN ("));
 
@@ -491,11 +451,12 @@ fn bind_ids<'a>(
     qb
 }
 
-pub async fn save_user_file_org_changes_filescan_cache(
+/// Save org-UI edits. `change.file_ids` are `files.id` values (the single file-id
+/// space; no more fsc echo). See ChangeType docs for what each variant does.
+pub async fn save_user_file_org_changes(
     pool: &SqlitePool,
     changes: Vec<ChangeDto>,
 ) -> Result<(), ApiError> {
-    let fsc_q: &'static str = "UPDATE file_scan_cache SET resolve_status = 2,";
     let abk_q = "UPDATE audiobooks SET ";
     let files_q = "UPDATE files SET ";
 
@@ -503,23 +464,18 @@ pub async fn save_user_file_org_changes_filescan_cache(
     let mut touched_books: HashSet<i64> = HashSet::new();
 
     for change in changes {
-        let mut fsc_qb = QueryBuilder::new(fsc_q);
         let mut files_qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new(files_q);
         let mut abk_qb: QueryBuilder<'_, Sqlite> = QueryBuilder::new(abk_q);
-
-        let mut fsc_parts: Vec<(&'static str, String)> = Vec::new();
 
         match change.change_type {
             ChangeType::FileMove => {
                 // SELECT FROM ABK WHERE AUTHOR = NEW_AUTHOR AND ID = NEW_BOOK_ID
                 // IF NONE => INSERT, ELSE UPDATE
 
-                // UPDATE FSC -> Complete
-
                 if change.new_author.is_none()
                     || change.new_book_id.is_none()
                     || change.new_series.is_none()
-                    || change.file_ids.len() == 0
+                    || change.file_ids.is_empty()
                 {
                     tracing::warn!(
                         "Skipping invalid FileMove change (missing author/book_id/series/file_ids): {:?}",
@@ -532,47 +488,40 @@ pub async fn save_user_file_org_changes_filescan_cache(
                 let dest_series = change.new_series.clone().unwrap();
                 let mut dest_book_id = change.new_book_id.unwrap();
 
-                // Update fsc
-                fsc_parts.push(("author", dest_author.clone()));
-                fsc_parts.push(("clean_series", dest_series.clone()));
-
-                for (i, (field, value)) in fsc_parts.into_iter().enumerate() {
-                    if i > 0 {
-                        fsc_qb.push(", ");
-                    }
-                    fsc_qb.push(field).push(" = ").push_bind(value);
-                }
-
-                fsc_qb = bind_ids(fsc_qb, "id", &change.file_ids);
-                fsc_qb.build().execute(pool).await?;
-
                 // negative book_ids from UI indicate new book create
                 if dest_book_id < 0 {
-                    let mut insert_qb = QueryBuilder::new(
-                        r#"
-                        INSERT OR IGNORE INTO audiobooks (author, series, title, files_location, cover_art, metadata, duration, user_locked, created_at, updated_at)
-                        SELECT
-                            fsc.author,
-                            fsc.clean_series,
-                            fsc.clean_series,
-                            fsc.path_parent,
-                            fsc.cover_art,
-                            fsc.raw_metadata,
-                            fsc.duration,
-                            1,
-                            CURRENT_TIMESTAMP,
-                            CURRENT_TIMESTAMP
-                        FROM file_scan_cache fsc
-                        "#,
-                    );
+                    // files_location for the new book = parent dir of one of the
+                    // moved files' current path (cover art is left to cover_links).
+                    let file_path: Option<String> = match change.file_ids.first() {
+                        Some(id) => sqlx::query_scalar("SELECT file_path FROM files WHERE id = ?")
+                            .bind(id)
+                            .fetch_optional(pool)
+                            .await?,
+                        None => None,
+                    };
+                    let files_location = file_path
+                        .as_deref()
+                        .and_then(|p| std::path::Path::new(p).parent())
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
 
-                    insert_qb = bind_ids(insert_qb, "id", &change.file_ids);
-                    let id = insert_qb.build().execute(pool).await?;
-                    dest_book_id = id.last_insert_rowid();
+                    let insert = sqlx::query(
+                        r#"
+                        INSERT OR IGNORE INTO audiobooks (author, series, title, files_location, user_locked, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        "#,
+                    )
+                    .bind(&dest_author)
+                    .bind(&dest_series)
+                    .bind(&dest_series)
+                    .bind(&files_location)
+                    .execute(pool)
+                    .await?;
+                    dest_book_id = insert.last_insert_rowid();
                 }
 
                 files_qb.push("book_id=").push_bind(dest_book_id);
-                files_qb = bind_ids(files_qb, "file_id", &change.file_ids);
+                files_qb = bind_ids(files_qb, "id", &change.file_ids);
                 files_qb.build().execute(pool).await?;
 
                 // User placed these files here deliberately; rescans must not undo it.
@@ -590,7 +539,7 @@ pub async fn save_user_file_org_changes_filescan_cache(
             ChangeType::MergeTitle => {
                 if let Some(dest_book_id) = change.new_book_id {
                     files_qb.push("book_id=").push_bind(dest_book_id);
-                    files_qb = bind_ids(files_qb, "file_id", &change.file_ids);
+                    files_qb = bind_ids(files_qb, "id", &change.file_ids);
                     files_qb.build().execute(pool).await?;
 
                     let mut prog_qb: QueryBuilder<'_, Sqlite> =
@@ -618,32 +567,18 @@ pub async fn save_user_file_org_changes_filescan_cache(
                 let mut abk_parts: Vec<(&'static str, String)> = Vec::new();
 
                 if let Some(new_author) = change.new_author {
-                    fsc_parts.push(("author", new_author.clone()));
                     abk_parts.push(("author", new_author));
                 }
 
                 if let Some(new_file_title) = change.new_filetitle {
-                    fsc_parts.push(("file_name", new_file_title.clone()));
                     files_qb.push("file_name =").push_bind(new_file_title);
                     files_has_update = true;
                 }
 
                 if let Some(new_series) = change.new_series {
-                    fsc_parts.push(("clean_series", new_series.clone()));
                     abk_parts.push(("series", new_series.clone()));
                     abk_parts.push(("title", new_series));
                 }
-
-                for (i, (field, value)) in fsc_parts.into_iter().enumerate() {
-                    if i > 0 {
-                        fsc_qb.push(", ");
-                    }
-                    fsc_qb.push(field).push(" = ").push_bind(value);
-                }
-
-                // fsc
-                fsc_qb = bind_ids(fsc_qb, "id", &change.file_ids);
-                fsc_qb.build().execute(pool).await?;
 
                 if !abk_parts.is_empty() {
                     for (i, (field, value)) in abk_parts.into_iter().enumerate() {
@@ -655,13 +590,13 @@ pub async fn save_user_file_org_changes_filescan_cache(
                     // User renames must survive rescans.
                     abk_qb.push(", user_locked = 1");
                     abk_qb.push(" WHERE id in (SELECT book_id from files");
-                    abk_qb = bind_ids(abk_qb, "file_id", &change.file_ids);
+                    abk_qb = bind_ids(abk_qb, "id", &change.file_ids);
 
                     abk_qb.push(")").build().execute(pool).await?;
 
                     let mut ids_qb =
                         QueryBuilder::new("SELECT DISTINCT book_id FROM files");
-                    ids_qb = bind_ids(ids_qb, "file_id", &change.file_ids);
+                    ids_qb = bind_ids(ids_qb, "id", &change.file_ids);
                     let renamed: Vec<i64> = ids_qb
                         .build_query_scalar()
                         .fetch_all(pool)
@@ -672,7 +607,7 @@ pub async fn save_user_file_org_changes_filescan_cache(
                 // Files
                 if files_has_update {
                     files_qb
-                        .push(" WHERE file_id = ")
+                        .push(" WHERE id = ")
                         .push_bind(&change.file_ids.first())
                         .build()
                         .execute(pool)
@@ -729,7 +664,7 @@ mod tests {
     }
 
     async fn run_sync(pool: &SqlitePool, rows: &[FileScanCache]) {
-        sync_disk_db_state(pool, rows).await.unwrap();
+        group_and_attach_files(pool, rows).await.unwrap();
     }
 
     async fn book_count(pool: &SqlitePool) -> i64 {
@@ -890,23 +825,13 @@ mod tests {
             .collect();
         run_sync(&pool, &rows).await;
 
-        // One row comes back unresolved (e.g. file touched on disk).
-        sqlx::query("UPDATE file_scan_cache SET resolve_status = 0 WHERE file_name = '003.mp3'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        run_sync(&pool, &[]).await;
+        // fetch_known_file_paths would have removed these paths from scan_files'
+        // rescan chunk (skip-set), but a rescan of the same rows must still be a
+        // no-op if it ever happens (e.g. a race) — UNIQUE(file_path) dedupes.
+        run_sync(&pool, &rows).await;
 
         assert_eq!(book_count(&pool).await, 1);
         assert_eq!(file_count(&pool, "the children of húrin").await, 10);
-
-        // Only that row was re-marked; nothing else got touched.
-        let unresolved: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM file_scan_cache WHERE resolve_status != 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(unresolved, 0);
     }
 
     #[tokio::test]
@@ -962,11 +887,8 @@ mod tests {
             .await
             .unwrap();
 
-        sqlx::query("UPDATE file_scan_cache SET resolve_status = 0")
-            .execute(&pool)
-            .await
-            .unwrap();
-        run_sync(&pool, &[]).await;
+        // Rescan finds the same files again with their original (pre-lock) tags.
+        run_sync(&pool, &rows).await;
 
         assert_eq!(book_count(&pool).await, 1);
         assert_eq!(file_count(&pool, "my curated title").await, 5);
@@ -975,10 +897,15 @@ mod tests {
     #[tokio::test]
     async fn org_rename_locks_book_and_survives_rescan() {
         let pool = test_pool().await;
+        // A real dir (not the usual fake "/lib/..." path): a rescan can no longer fall
+        // back on file_scan_cache having been mutated in place by the org save (that
+        // table's gone), so the folder's metadata.json — written below by
+        // save_user_file_org_changes — is what makes the rename stick across rescans.
+        let dir = temp_book_dir("org_rename_lock");
         let rows: Vec<FileScanCache> = (0..3)
             .map(|i| {
                 fsc(
-                    "/lib/hurin/MP3",
+                    &dir,
                     &format!("{i:03}.mp3"),
                     "j.r.r. tolkien",
                     Some("the children of húrin"),
@@ -988,14 +915,14 @@ mod tests {
             .collect();
         run_sync(&pool, &rows).await;
 
-        let fsc_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM file_scan_cache")
+        let file_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM files")
             .fetch_all(&pool)
             .await
             .unwrap();
 
         let change = ChangeDto {
             change_type: ChangeType::Rename,
-            file_ids: fsc_ids,
+            file_ids,
             current_book_ids: None,
             new_book_id: None,
             current_author: None,
@@ -1005,9 +932,7 @@ mod tests {
             new_series: Some("narn i chîn húrin".to_string()),
             new_filetitle: None,
         };
-        save_user_file_org_changes_filescan_cache(&pool, vec![change])
-            .await
-            .unwrap();
+        save_user_file_org_changes(&pool, vec![change]).await.unwrap();
 
         let locked: bool = sqlx::query_scalar("SELECT user_locked FROM audiobooks")
             .fetch_one(&pool)
@@ -1016,14 +941,12 @@ mod tests {
         assert!(locked);
 
         // Rescan with the original (pre-rename) tags must not undo the user's edit.
-        sqlx::query("UPDATE file_scan_cache SET resolve_status = 0")
-            .execute(&pool)
-            .await
-            .unwrap();
-        run_sync(&pool, &[]).await;
+        run_sync(&pool, &rows).await;
 
         assert_eq!(book_count(&pool).await, 1);
         assert_eq!(file_count(&pool, "narn i chîn húrin").await, 3);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     fn temp_book_dir(name: &str) -> String {
@@ -1071,6 +994,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn scan_restores_series_link_from_metadata_json() {
+        let pool = test_pool().await;
+        let dir = temp_book_dir("meta_series");
+        std::fs::write(
+            std::path::Path::new(&dir).join("metadata.json"),
+            r#"{"version":1,"title":"the two towers","author":"j.r.r. tolkien",
+                "series_name":"The Lord of the Rings","series_sequence":"2",
+                "series_asin":"B005NF6MIQ","series_locked":true}"#,
+        )
+        .unwrap();
+
+        let rows: Vec<FileScanCache> = (0..2)
+            .map(|i| {
+                fsc(
+                    &dir,
+                    &format!("{i:03}.mp3"),
+                    "j.r.r. tolkien",
+                    Some("the two towers"),
+                    Some(&format!("chapter {i}")),
+                )
+            })
+            .collect();
+        run_sync(&pool, &rows).await;
+
+        let (series_id, sequence, series_locked): (Option<i64>, Option<String>, bool) =
+            sqlx::query_as("SELECT series_id, series_sequence, series_locked FROM audiobooks")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let sid = series_id.expect("book linked to series");
+        assert_eq!(sequence.as_deref(), Some("2"));
+        assert!(series_locked);
+
+        let (name, provider, provider_id): (String, Option<String>, Option<String>) =
+            sqlx::query_as("SELECT name, provider, provider_id FROM series WHERE id = ?")
+                .bind(sid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(name, "The Lord of the Rings");
+        assert_eq!(provider.as_deref(), Some("audible"));
+        assert_eq!(provider_id.as_deref(), Some("B005NF6MIQ"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
     async fn org_rename_writes_metadata_json() {
         let pool = test_pool().await;
         let dir = temp_book_dir("meta_write");
@@ -1088,13 +1058,13 @@ mod tests {
             .collect();
         run_sync(&pool, &rows).await;
 
-        let fsc_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM file_scan_cache")
+        let file_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM files")
             .fetch_all(&pool)
             .await
             .unwrap();
         let change = ChangeDto {
             change_type: ChangeType::Rename,
-            file_ids: fsc_ids,
+            file_ids,
             current_book_ids: None,
             new_book_id: None,
             current_author: None,
@@ -1104,9 +1074,7 @@ mod tests {
             new_series: Some("narn i chîn húrin".to_string()),
             new_filetitle: None,
         };
-        save_user_file_org_changes_filescan_cache(&pool, vec![change])
-            .await
-            .unwrap();
+        save_user_file_org_changes(&pool, vec![change]).await.unwrap();
 
         let meta = read_book_meta_json(&dir).await.expect("metadata.json written");
         assert_eq!(meta.title, "narn i chîn húrin");

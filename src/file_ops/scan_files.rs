@@ -11,9 +11,7 @@ use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
-    db::meta_scan::{
-        delete_removed_paths_from_cache, fetch_all_stage_file_paths, sync_disk_db_state,
-    },
+    db::meta_scan::{delete_removed_files, fetch_known_file_paths, group_and_attach_files},
     file_ops::meta_cleanup::meta_cleanup,
     models::meta_scan::FileScanCache,
 };
@@ -175,8 +173,8 @@ async fn capture_file_paths(path_str: &str) -> Vec<PathBuf> {
 }
 
 pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError> {
-    println!("ABS LOC: {:#?}", path_str);
-    let scan_cache = Arc::new(RwLock::new(fetch_all_stage_file_paths(db).await?));
+    tracing::info!("Scanning audiobook location: {path_str}");
+    let scan_cache = Arc::new(RwLock::new(fetch_known_file_paths(db).await?));
     let fsc_metadatas: Arc<RwLock<Vec<FileScanCache>>> = Arc::new(RwLock::new(Vec::new()));
     let paths = capture_file_paths(path_str).await;
 
@@ -228,15 +226,14 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError
     };
 
     if !paths_to_delete.is_empty() {
-        let rows_deleted = delete_removed_paths_from_cache(db, &paths_to_delete).await?;
-        println!("Rows deleted: { :#? }", rows_deleted);
+        delete_removed_files(db, &paths_to_delete).await?;
     }
 
     let metadatas = {
         let mut guard = fsc_metadatas.write().await;
         let metadatas = take(&mut *guard);
         drop(guard);
-        println!("Rows to insert: {}", metadatas.len());
+        tracing::info!("Files to attach: {}", metadatas.len());
         metadatas
     };
 
@@ -245,7 +242,7 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError
     let mut count = 0;
     if !metadatas.is_empty() {
         for chunk in metadatas.chunks(CHUNK_SIZE) {
-            count += sync_disk_db_state(db, chunk).await?;
+            count += group_and_attach_files(db, chunk).await?;
         }
     }
 

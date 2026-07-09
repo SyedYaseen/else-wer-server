@@ -26,8 +26,13 @@ pub struct BookMetaFile {
     pub series_sequence: Option<String>,
     #[serde(default)]
     pub asin: Option<String>,
+    /// ASIN of the series itself (Audible-provided); restores provider dedup on rescan.
+    #[serde(default)]
+    pub series_asin: Option<String>,
     #[serde(default)]
     pub user_locked: bool,
+    #[serde(default)]
+    pub series_locked: bool,
 }
 
 #[derive(FromRow)]
@@ -39,8 +44,10 @@ struct BookMetaRow {
     series_sequence: Option<String>,
     asin: Option<String>,
     user_locked: bool,
+    series_locked: bool,
     files_location: String,
     series_name: Option<String>,
+    series_asin: Option<String>,
 }
 
 /// Write {files_location}/metadata.json for a book. Skipped when the folder holds
@@ -50,7 +57,8 @@ pub async fn write_book_meta_json(pool: &SqlitePool, book_id: i64) -> Result<(),
     let Some(row) = sqlx::query_as::<_, BookMetaRow>(
         r#"
         SELECT b.title, b.author, b.series, b.narrated_by, b.series_sequence, b.asin,
-               b.user_locked, b.files_location, s.name AS series_name
+               b.user_locked, b.series_locked, b.files_location, s.name AS series_name,
+               CASE WHEN s.provider = 'audible' THEN s.provider_id END AS series_asin
         FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
         WHERE b.id = ?
         "#,
@@ -84,7 +92,9 @@ pub async fn write_book_meta_json(pool: &SqlitePool, book_id: i64) -> Result<(),
         series_name: row.series_name,
         series_sequence: row.series_sequence,
         asin: row.asin,
+        series_asin: row.series_asin,
         user_locked: row.user_locked,
+        series_locked: row.series_locked,
     };
 
     let path = Path::new(&row.files_location).join(META_FILE_NAME);

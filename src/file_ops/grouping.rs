@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use strsim::levenshtein;
 
-/// One file_scan_cache row, as fed into the grouping pass.
+/// One scan-pass file record, as fed into the grouping pass. `row_idx` indexes back
+/// into the in-memory `FileScanCache` chunk slice (no DB staging table since 0008).
 #[derive(Debug, Clone)]
 pub struct GroupRow {
-    pub fsc_id: i64,
+    pub row_idx: usize,
     pub author: Option<String>,
     pub narrated_by: Option<String>,
     /// Album-derived; falls back to clean_title upstream when the file has no album tag.
@@ -26,7 +27,7 @@ pub struct BookGroup {
     pub series: String,
     pub narrated_by: Option<String>,
     pub cover_art: Option<String>,
-    pub fsc_ids: Vec<i64>,
+    pub row_indices: Vec<usize>,
 }
 
 pub const PREFIX_MERGE_RATIO: f64 = 0.5;
@@ -246,7 +247,7 @@ fn partition_to_group(path_parent: &str, partition: Partition) -> BookGroup {
         series,
         narrated_by,
         cover_art,
-        fsc_ids: rows.iter().map(|r| r.fsc_id).collect(),
+        row_indices: rows.iter().map(|r| r.row_idx).collect(),
     }
 }
 
@@ -255,14 +256,14 @@ mod tests {
     use super::*;
 
     fn row(
-        fsc_id: i64,
+        row_idx: usize,
         author: &str,
         album: Option<&str>,
         title: Option<&str>,
         parent: &str,
     ) -> GroupRow {
         GroupRow {
-            fsc_id,
+            row_idx,
             author: Some(author.to_string()),
             narrated_by: None,
             clean_series: album.map(|s| s.to_string()),
@@ -289,7 +290,7 @@ mod tests {
         let groups = group_files(rows);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].title, "the children of húrin");
-        assert_eq!(groups[0].fsc_ids.len(), 128);
+        assert_eq!(groups[0].row_indices.len(), 128);
     }
 
     #[test]
@@ -316,7 +317,7 @@ mod tests {
         ));
         let groups = group_files(rows);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].fsc_ids.len(), 19);
+        assert_eq!(groups[0].row_indices.len(), 19);
         assert_eq!(groups[0].title, "the hobbit");
         assert_eq!(groups[0].author, "j.r.r. tolkien");
     }
@@ -346,7 +347,7 @@ mod tests {
         }
         let groups = group_files(rows);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].fsc_ids.len(), 31);
+        assert_eq!(groups[0].row_indices.len(), 31);
     }
 
     #[test]
@@ -368,7 +369,7 @@ mod tests {
         }
         let groups = group_files(rows);
         assert_eq!(groups.len(), 2);
-        let mut sizes: Vec<usize> = groups.iter().map(|g| g.fsc_ids.len()).collect();
+        let mut sizes: Vec<usize> = groups.iter().map(|g| g.row_indices.len()).collect();
         sizes.sort();
         assert_eq!(sizes, vec![3, 31]);
     }
@@ -385,7 +386,7 @@ mod tests {
         let groups = group_files(rows);
         assert_eq!(groups.len(), 4);
         for g in &groups {
-            assert_eq!(g.fsc_ids.len(), 1);
+            assert_eq!(g.row_indices.len(), 1);
             assert_eq!(g.path_parent, "/lib/loose");
         }
     }

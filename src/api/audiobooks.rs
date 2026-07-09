@@ -1,4 +1,5 @@
 use crate::api::auth_extractor::{AuthUser, StreamAuth};
+use crate::api::match_meta::try_spawn_metadata_backfill;
 use crate::db::audiobooks::{get_file_path_by_id, get_files_by_book_id, list_all_books};
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
@@ -15,6 +16,7 @@ use axum::{
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
+use std::sync::atomic::Ordering;
 
 use sqlx::{Pool, Sqlite};
 use tower::util::ServiceExt;
@@ -154,8 +156,18 @@ pub async fn upload_handler(
         // cleanup
         remove_dir_all(&parts_dir).await?;
         tracing::info!("File saved to {final_path}");
-        let count = scan_files(upload_dir, db).await?;
-        cover_links(db).await?;
+
+        let mut count = 0u64;
+        if try_start_scan(&state) {
+            let result = scan_files(upload_dir, db).await;
+            finish_scan(&state);
+            count = result?;
+            cover_links(db).await?;
+            // Fire-and-forget: fills missing cover/description/series from Audible (1.5s/book).
+            try_spawn_metadata_backfill(state.clone());
+        } else {
+            tracing::info!("Skipping post-upload rescan: a scan is already running");
+        }
 
         return Ok((
             StatusCode::OK,
@@ -177,16 +189,42 @@ pub async fn upload_handler(
     ))
 }
 
+/// Guards a full library scan: one pass at a time across manual/upload/lazy triggers.
+/// Unlike `try_spawn_metadata_backfill`, callers await the scan inline (they need its
+/// result), so this just marks/clears the flag around the call rather than spawning.
+fn try_start_scan(state: &AppState) -> bool {
+    state
+        .scan_running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}
+
+fn finish_scan(state: &AppState) {
+    state.scan_running.store(false, Ordering::SeqCst);
+}
+
 // Scan all audiobook files on local hard drive
 pub async fn scan_files_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
 ) -> Result<impl IntoResponse, ApiError> {
+    if !try_start_scan(&state) {
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(json!({ "message": "A scan is already running" })),
+        ));
+    }
+
     let path = &state.config.audiobook_location;
     let db = &state.db_pool;
 
-    let files_count = scan_files(path, db).await?;
+    let result = scan_files(path, db).await;
+    finish_scan(&state);
+    let files_count = result?;
+
     cover_links(db).await?;
+    // Fire-and-forget: fills missing cover/description/series from Audible (1.5s/book).
+    try_spawn_metadata_backfill(state.clone());
     Ok((
         StatusCode::OK,
         Json(json!({
@@ -206,7 +244,15 @@ pub async fn list_scanned_files_handler(
     let db = &state.db_pool;
 
     if cache_row_count(db).await? == 0 {
-        scan_files(path, db).await?;
+        if !try_start_scan(&state) {
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(json!({ "message": "A scan is already running" })),
+            ));
+        }
+        let result = scan_files(path, db).await;
+        finish_scan(&state);
+        result?;
         cover_links(db).await?;
     }
     let grouped_files = get_grouped_files(db).await?;

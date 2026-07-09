@@ -9,7 +9,7 @@ pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiE
         r#"
         SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
                b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, b.description, s.name AS series_name
+               b.user_locked, b.description, b.series_locked, s.name AS series_name
         FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
         ORDER BY b.author, b.series, b.title
         "#,
@@ -25,7 +25,7 @@ pub async fn get_book(db: &Pool<Sqlite>, book_id: i64) -> Result<AudioBookRow, A
         r#"
         SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
                b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, b.description, s.name AS series_name
+               b.user_locked, b.description, b.series_locked, s.name AS series_name
         FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
         WHERE b.id = ?1
         "#,
@@ -86,17 +86,18 @@ pub async fn get_files_by_book_id(
         SELECT
             id,
             book_id,
-            file_id,
             file_name,
             file_size,
             file_path,
             duration,
             channels,
             sample_rate,
-            bitrate
+            bitrate,
+            track_number,
+            disc_number
         FROM files
         WHERE book_id = ?
-        ORDER BY id
+        ORDER BY COALESCE(disc_number, 0), COALESCE(track_number, 999999), file_name
         "#,
         book_id
     )
@@ -112,14 +113,17 @@ pub async fn get_files_by_book_id(
                     .ok_or_else(|| ApiError::Internal("file row missing id".into()))?,
                 data: CreateFileMetadata {
                     book_id: r.book_id,
-                    file_id: Some(r.file_id),
+                    // Single id space since 0008: file_id mirrors the row's own id.
+                    file_id: r.id,
                     file_name: r.file_name,
-                    file_size: r.file_size,
+                    file_size: Some(r.file_size),
                     file_path: r.file_path,
                     duration: r.duration,
                     channels: r.channels,
                     sample_rate: r.sample_rate,
                     bitrate: r.bitrate,
+                    track_number: r.track_number,
+                    disc_number: r.disc_number,
                 },
             })
         })

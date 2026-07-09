@@ -20,7 +20,7 @@ use crate::{
             list_scanned_files_handler, save_organized_files_handler, stream_file,
             upload_handler,
         },
-        match_meta::{apply_book_match, backfill_covers, match_book_candidates},
+        match_meta::{apply_book_match, assign_series, backfill_metadata, match_book_candidates},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
         user::{change_password, create_user, login},
     },
@@ -45,7 +45,8 @@ pub async fn routes() -> Router<AppState> {
             "/match_book/{book_id}",
             get(match_book_candidates).post(apply_book_match),
         )
-        .route("/backfill_covers", post(backfill_covers))
+        .route("/backfill_metadata", post(backfill_metadata))
+        .route("/assign_series", post(assign_series))
         // Files
         .route("/download_book/{book_id}", get(download_book)) // TODO: This might be obsolete
         .route("/stream/{id}", get(stream_file)) // GET also matches HEAD; ServeFile handles it

@@ -19,6 +19,7 @@ pub struct AudioBookRow {
     pub series_name: Option<String>,
     pub user_locked: bool,
     pub description: Option<String>,
+    pub series_locked: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,6 +33,8 @@ pub struct BaseFileMetadata {
     pub sample_rate: Option<i64>,
     pub bitrate: Option<i64>,
     pub file_size: Option<i64>,
+    pub track_number: Option<i64>,
+    pub disc_number: Option<i64>,
 }
 
 #[derive(Debug, FromRow, Serialize, Deserialize)]
