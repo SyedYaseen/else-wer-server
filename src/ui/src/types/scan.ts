@@ -47,11 +47,13 @@ export interface MatchResponse {
   book_id: number;
   book_title: string;
   book_author: string;
+  book_cover_art?: string | null;
   candidates: MatchCandidate[];
 }
 
 export interface ApplyMatchDto extends MatchCandidate {
   apply_title_author: boolean;
+  apply_cover: boolean;
 }
 
 // ── Client-side tree, derived from GroupedFiles ─────────────────────────

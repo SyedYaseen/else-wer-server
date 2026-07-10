@@ -37,6 +37,10 @@ pub struct ApplyMatchDto {
     pub candidate: MatchCandidate,
     #[serde(default)]
     pub apply_title_author: bool,
+    /// Replace an existing cover with the candidate's. If the book has no cover
+    /// yet, the candidate's cover is applied regardless of this flag.
+    #[serde(default)]
+    pub apply_cover: bool,
 }
 
 /// POST /assign_series body: manually reconcile books into one series. `series_id`

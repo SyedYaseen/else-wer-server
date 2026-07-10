@@ -126,24 +126,6 @@ pub async fn assign_books_to_series(
     Ok(updated)
 }
 
-pub async fn get_book_title_author(
-    pool: &SqlitePool,
-    book_id: i64,
-) -> Result<(String, String), ApiError> {
-    let row = sqlx::query_as::<_, (String, String)>(
-        r#"
-        SELECT title, author
-        FROM audiobooks
-        WHERE id = ?
-        "#,
-    )
-    .bind(book_id)
-    .fetch_optional(pool)
-    .await?;
-
-    row.ok_or_else(|| ApiError::NotFound(format!("No book with id {book_id}")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

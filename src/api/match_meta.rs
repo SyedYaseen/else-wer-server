@@ -2,7 +2,7 @@ use crate::{
     AppState,
     api::{api_error::ApiError, auth_extractor::AuthUser},
     db::audiobooks::{get_book, list_all_books, update_cover_art, update_description},
-    db::series::{assign_books_to_series, get_book_title_author, set_book_match, upsert_series},
+    db::series::{assign_books_to_series, set_book_match, upsert_series},
     file_ops::{book_cover::download_cover, book_meta_file::write_book_meta_json, meta_cleanup::fold_key},
     models::match_meta::{ApplyMatchDto, AssignSeriesDto, MatchCandidate},
     services::audible,
@@ -53,7 +53,8 @@ pub async fn match_book_candidates(
     Query(params): Query<MatchQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
-    let (title, author) = get_book_title_author(db, book_id).await?;
+    let book = get_book(db, book_id).await?;
+    let (title, author) = (book.title.clone(), book.author.clone());
 
     let (search_title, search_author) = match &params.q {
         Some(q) => (q.as_str(), None),
@@ -72,6 +73,7 @@ pub async fn match_book_candidates(
             "book_id": book_id,
             "book_title": title,
             "book_author": author,
+            "book_cover_art": book.cover_art,
             "candidates": candidates,
         })),
     ))
@@ -116,7 +118,7 @@ pub async fn apply_book_match(
     )
     .await?;
 
-    if book.cover_art.is_none() {
+    if payload.apply_cover || book.cover_art.is_none() {
         if let Some(cover_url) = candidate.cover_url.as_deref() {
             match download_cover(cover_url, &book).await {
                 Ok(Some(cover_link)) => {

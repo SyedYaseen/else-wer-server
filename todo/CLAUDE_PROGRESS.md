@@ -1,4 +1,12 @@
 ## User todo/ feature/ bug fix pipeline
+- [ ] PWA offline downloads + playback (2026-07-09, uncommitted): IndexedDB storage (src/ui/src/offline/storage.ts, DB v3 —
+  audio stored as 8MB segments to avoid iOS Safari memory-crash reloads that looked like "download resets"; book/file
+  metadata snapshot store for offline cold-start; legacy v2 whole-blob records still readable), module-level download
+  store (offline/downloadStore.ts — survives route unmounts, throttled progress, dupe-guard, visible error), engine.ts
+  prefers local blob over streamUrl (iOS fires <audio> error late/never), localStorage progress fallback (playerResume.ts).
+  REMAINING: on-device iOS verification by user. BLOCKER for offline cold-start: service worker needs HTTPS —
+  deploy/https-duckdns/{setup.sh,duckdns-update.sh,README.md} added (DuckDNS + Let's Encrypt DNS-01 + Caddy, no
+  domain/port-forward needed); user must run setup.sh on the server box and re-Add-to-Home-Screen from the HTTPS origin.
 - [ ] Unified file serving: /api/stream/{id} (RFC 7233) for streaming + downloads; legacy download_chunk/get_file_size removed; app DownloadManager migrated + streaming playback — plan: todo/1_STREAMING_PLAN.md (CODE-COMPLETE 2026-07-06: server Phases 1-3 validated, app Phases 4-5 done + tsc clean; REMAINING: on-device validation Phases 4.5/6 by user)
 - [ ] Metadata reconcile: folder-identity book grouping (fixes 278-single-file-book regression) + series match API + per-folder metadata.json — full plan: todo/2_METADATA_RECONCILE.md (NOT STARTED in this checkout 2026-07-06: was implemented+verified once in an isolated cloud sandbox with no git remote, so that work never left the sandbox and is lost; needs redo here from the plan)
 - [x] Lightweight web PWA (iOS stopgap: login/library/player) + metadata editor/reorganizer (replaces else-wer-web prototype) — new sibling project else-wer-pwa (Vite+React SPA), embedded in this server via ServeDir+SPA fallback — full plan: todo/3_WEB_PWA_PLAN.md (ALL PHASES 0-4 DONE 2026-07-08: scaffold/auth/SPA fallback + Library + full Player + PWA manifest/icons/SW + Organize (metadata match/rename/move/merge, selection+action-sheet UX instead of drag/drop since native HTML5 DnD doesn't work on iOS Safari), verified live via the actual Rust server; REMAINING for user: iOS "Add to Home Screen" on-device check, and exercising a real rename/move/merge/match through the Organize UI against the live library)

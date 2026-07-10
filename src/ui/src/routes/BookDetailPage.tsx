@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fileMetadata, coverUrl, downloadBook } from '../api/books';
+import { fileMetadata, coverUrl } from '../api/books';
 import { getBookProgress } from '../api/progress';
-import { resolveResumePoint } from '../lib/playerResume';
+import { resolveResumePoint, getLocalProgress } from '../lib/playerResume';
+import type { AudioBookRow, FileMetadata, Progress } from '../types/book';
 import { loadBook } from '../player/engine';
 import { useLibraryBooks, LIBRARY_KEYS } from '../hooks/useLibraryBooks';
 import { useScannedFiles, useApplyChanges } from '../hooks/useOrganize';
@@ -11,7 +12,10 @@ import { buildTree } from '../types/scan';
 import type { ChangeDto } from '../types/scan';
 import { formatDuration } from '../lib/format';
 import { Button } from '../components/ui/Button';
+import { ProgressBar } from '../components/ui/ProgressBar';
 import { ActionMenu } from '../components/ui/ActionMenu';
+import { isBookDownloaded, getOfflineBookData } from '../offline/storage';
+import { startDownload, useDownloadStore } from '../offline/downloadStore';
 import { MatchSheet } from '../components/organize/MatchSheet';
 import { RenameSheet } from '../components/organize/RenameSheet';
 import { PickBookSheet, type PickResult } from '../components/organize/PickBookSheet';
@@ -25,18 +29,37 @@ export function BookDetailPage() {
   const { id } = useParams<{ id: string }>();
   const bookId = Number(id);
   const navigate = useNavigate();
-  const [downloading, setDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const [matchOpen, setMatchOpen] = useState(false);
   const [sheet, setSheet] = useState<DetailSheet>(null);
 
-  const { data: books = [] } = useLibraryBooks();
-  const book = books.find((b) => b.id === bookId);
+  const { data: books = [], isLoading: booksLoading } = useLibraryBooks();
 
-  const { data: files = [], isLoading, isError } = useQuery({
+  const { data: files_, isLoading, isError } = useQuery({
     queryKey: [...LIBRARY_KEYS.books, bookId, 'files'],
     queryFn: () => fileMetadata(bookId),
     enabled: Number.isFinite(bookId),
   });
+
+  // Offline fallback: if a book was previously downloaded, its metadata
+  // snapshot lets this page (and Play) still work with no network at all.
+  // undefined = check pending, null = no snapshot — distinguished so the
+  // "Book not found" state doesn't flash while the lookup is in flight.
+  const [offlineData, setOfflineData] = useState<{ book: AudioBookRow; files: FileMetadata[] } | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!Number.isFinite(bookId)) return;
+    getOfflineBookData(bookId)
+      .then(setOfflineData)
+      .catch(() => setOfflineData(null));
+  }, [bookId]);
+
+  const book = books.find((b) => b.id === bookId) ?? offlineData?.book;
+  const files = useMemo(() => files_ ?? offlineData?.files ?? [], [files_, offlineData]);
+
+  const dl = useDownloadStore((s) => s.byBook[bookId]);
+  const downloading = dl?.status === 'downloading';
 
   const { data: scanned } = useScannedFiles();
   const tree = useMemo(() => (scanned ? buildTree(scanned) : []), [scanned]);
@@ -84,31 +107,45 @@ export function BookDetailPage() {
     setSheet(null);
   }
 
-  async function handleDownload() {
-    if (!book) return;
-    setDownloading(true);
-    try {
-      await downloadBook(book.id);
-    } finally {
-      setDownloading(false);
-    }
+  const dlStatus = dl?.status;
+  useEffect(() => {
+    if (!book || files.length === 0 || dlStatus === 'downloading') return;
+    let cancelled = false;
+    isBookDownloaded(book.id, files).then((result) => {
+      if (!cancelled) setDownloaded(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [book, files, dlStatus]);
+
+  function handleDownload() {
+    if (!book || files.length === 0) return;
+    void startDownload(book, files);
   }
 
   async function handlePlay() {
     if (!book) return;
-    const progress = await getBookProgress(book.id);
+    let progress: Progress[];
+    try {
+      progress = await getBookProgress(book.id);
+    } catch {
+      progress = getLocalProgress(book.id);
+    }
     const resume = resolveResumePoint(files, progress);
     loadBook(book, files, resume);
     navigate(`/player/${book.id}`);
   }
 
   if (!book) {
+    // Don't flash "Book not found" while either source is still resolving.
+    const pending = booksLoading || offlineData === undefined;
     return (
       <div className="book-detail-page">
         <Link to="/" className="book-detail-back">
           ← Back to library
         </Link>
-        <p>Book not found.</p>
+        {!pending && <p>Book not found.</p>}
       </div>
     );
   }
@@ -143,8 +180,8 @@ export function BookDetailPage() {
             <Button variant="primary" onClick={handlePlay} disabled={files.length === 0}>
               Play
             </Button>
-            <Button variant="secondary" onClick={handleDownload} disabled={downloading}>
-              {downloading ? 'Downloading…' : 'Download'}
+            <Button variant="secondary" onClick={handleDownload} disabled={downloading || files.length === 0}>
+              {downloading ? 'Downloading…' : downloaded || dl?.status === 'done' ? 'Downloaded' : 'Download'}
             </Button>
             <ActionMenu
               items={[
@@ -156,6 +193,10 @@ export function BookDetailPage() {
               ]}
             />
           </div>
+          {dl?.status === 'downloading' && (
+            <ProgressBar value={dl.fraction} className="book-detail-download-progress" />
+          )}
+          {dl?.status === 'error' && <p className="book-detail-download-error">Download failed: {dl.message}</p>}
         </div>
       </div>
 

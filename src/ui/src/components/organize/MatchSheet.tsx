@@ -4,6 +4,7 @@ import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
 import { Pill } from '../ui/Pill';
 import { matchBookCandidates, applyBookMatch } from '../../api/scan';
+import { coverUrl } from '../../api/books';
 import { SCAN_KEYS } from '../../hooks/useOrganize';
 import { LIBRARY_KEYS } from '../../hooks/useLibraryBooks';
 import { SearchIcon } from './icons';
@@ -21,6 +22,7 @@ export function MatchSheet({ open, onClose, bookId }: MatchSheetProps) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [applyTitleAuthor, setApplyTitleAuthor] = useState(true);
+  const [applyCover, setApplyCover] = useState(true);
   const [applied, setApplied] = useState<MatchCandidate | null>(null);
   const queryClient = useQueryClient();
 
@@ -46,7 +48,11 @@ export function MatchSheet({ open, onClose, bookId }: MatchSheetProps) {
 
   const apply = useMutation({
     mutationFn: (candidate: MatchCandidate) =>
-      applyBookMatch(bookId!, { ...candidate, apply_title_author: applyTitleAuthor }),
+      applyBookMatch(bookId!, {
+        ...candidate,
+        apply_title_author: applyTitleAuthor,
+        apply_cover: applyCover,
+      }),
     onSuccess: (_data, candidate) => {
       queryClient.invalidateQueries({ queryKey: SCAN_KEYS.files });
       queryClient.invalidateQueries({ queryKey: LIBRARY_KEYS.books });
@@ -83,6 +89,13 @@ export function MatchSheet({ open, onClose, bookId }: MatchSheetProps) {
       <h3 className="sheet-title">Match metadata</h3>
       {data && (
         <p className="match-current">
+          {coverUrl(data.book_cover_art ?? null) && (
+            <img
+              className="match-cover match-current-cover"
+              src={coverUrl(data.book_cover_art ?? null)!}
+              alt=""
+            />
+          )}
           Currently: <strong>{data.book_title}</strong> — {data.book_author}
         </p>
       )}
@@ -112,6 +125,15 @@ export function MatchSheet({ open, onClose, bookId }: MatchSheetProps) {
           onChange={(e) => setApplyTitleAuthor(e.target.checked)}
         />
         Overwrite title/author with match
+      </label>
+
+      <label className="apply-title-toggle">
+        <input
+          type="checkbox"
+          checked={applyCover}
+          onChange={(e) => setApplyCover(e.target.checked)}
+        />
+        Replace cover art with match
       </label>
 
       {isLoading && <div className="match-state">Searching…</div>}

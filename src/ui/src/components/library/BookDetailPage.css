@@ -70,6 +70,16 @@
   gap: var(--space-sm);
 }
 
+.book-detail-download-progress {
+  margin-top: var(--space-sm);
+}
+
+.book-detail-download-error {
+  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
 .book-detail-section-title {
   font-size: var(--text-xl);
   margin-bottom: var(--space-sm);

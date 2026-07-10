@@ -1,7 +1,9 @@
 import { usePlayerStore } from '../store/player';
 import { streamUrl, updateProgress } from '../api/progress';
 import { coverUrl } from '../api/books';
+import { getOfflineFileBlob } from '../offline/storage';
 import type { AudioBookRow, FileMetadata } from '../types/book';
+import { saveLocalProgress } from '../lib/playerResume';
 import type { ResumePoint } from '../lib/playerResume';
 import { consumeEndOfChapter } from './sleepTimer';
 
@@ -9,6 +11,17 @@ import { consumeEndOfChapter } from './sleepTimer';
 // across route navigation since it's never mounted inside a React tree.
 export const audio = new Audio();
 audio.preload = 'auto';
+
+// Tracks a blob URL created for offline fallback playback so it can be
+// revoked when a different file is loaded.
+let offlineBlobUrl: string | null = null;
+
+function revokeOfflineBlobUrl() {
+  if (offlineBlobUrl) {
+    URL.revokeObjectURL(offlineBlobUrl);
+    offlineBlobUrl = null;
+  }
+}
 
 const PERIODIC_SAVE_SEC = 10;
 const COMPLETION_THRESHOLD_SEC = 3;
@@ -22,12 +35,9 @@ function saveProgress(complete: boolean) {
   const { book, files, index, currentTime } = usePlayerStore.getState();
   const file = files[index];
   if (!book || !file) return;
-  updateProgress({
-    book_id: book.id,
-    file_id: file.id,
-    progress_ms: Math.floor(currentTime * 1000),
-    complete,
-  }).catch((e) => console.error('progress save failed', e));
+  const payload = { book_id: book.id, file_id: file.id, progress_ms: Math.floor(currentTime * 1000), complete };
+  updateProgress(payload).catch((e) => console.error('progress save failed', e));
+  saveLocalProgress({ id: 0, user_id: 0, ...payload, updated_at: new Date().toISOString() });
 }
 
 function updateMediaSessionMetadata() {
@@ -46,17 +56,53 @@ function updateMediaSessionMetadata() {
   });
 }
 
+// Guards against a stale async blob lookup applying after a newer loadFile call.
+let loadSeq = 0;
+
 function loadFile(index: number, startSec: number, autoplay: boolean) {
   const { files } = usePlayerStore.getState();
   const file = files[index];
   if (!file) return;
   lastSavedSec = -1;
   usePlayerStore.getState().setIndex(index);
-  audio.src = streamUrl(file.id);
-  audio.currentTime = startSec;
-  audio.playbackRate = usePlayerStore.getState().rate;
-  if (autoplay) audio.play().catch((e) => console.error('play failed', e));
-  updateMediaSessionMetadata();
+  const seq = ++loadSeq;
+  // Prefer a downloaded local copy outright instead of waiting for a network
+  // error: iOS Safari fires the <audio> error event late or not at all for an
+  // unreachable stream URL, which blocked offline playback of downloaded books.
+  getOfflineFileBlob(file.id)
+    .catch(() => null)
+    .then((blob) => {
+      if (seq !== loadSeq) return;
+      revokeOfflineBlobUrl();
+      if (blob) {
+        offlineBlobUrl = URL.createObjectURL(blob);
+        audio.src = offlineBlobUrl;
+      } else {
+        audio.src = streamUrl(file.id);
+      }
+      audio.currentTime = startSec;
+      audio.playbackRate = usePlayerStore.getState().rate;
+      if (autoplay) audio.play().catch((e) => console.error('play failed', e));
+      updateMediaSessionMetadata();
+    });
+}
+
+// Server-unreachable fallback: on a network/stream error, fall back to a
+// locally downloaded copy of the current file if one exists, preserving
+// playback position instead of relying on navigator.onLine (unreliable for
+// a self-hosted server that may be down while Wi-Fi still reports online).
+async function tryOfflineFallback() {
+  const { book, files, index, currentTime, playing } = usePlayerStore.getState();
+  const file = files[index];
+  if (!book || !file) return;
+  const blob = await getOfflineFileBlob(file.id);
+  if (!blob) return;
+  const resumeSec = currentTime;
+  revokeOfflineBlobUrl();
+  offlineBlobUrl = URL.createObjectURL(blob);
+  audio.src = offlineBlobUrl;
+  audio.currentTime = resumeSec;
+  if (playing) audio.play().catch((e) => console.error('play failed', e));
 }
 
 export function loadBook(book: AudioBookRow, files: FileMetadata[], resume: ResumePoint) {
@@ -124,6 +170,10 @@ audio.addEventListener('play', () => usePlayerStore.getState().setPlaying(true))
 audio.addEventListener('pause', () => {
   usePlayerStore.getState().setPlaying(false);
   saveProgress(isNearEnd(audio.currentTime, audio.duration || 0));
+});
+audio.addEventListener('error', () => {
+  if (offlineBlobUrl && audio.currentSrc === offlineBlobUrl) return;
+  tryOfflineFallback().catch((e) => console.error('offline fallback failed', e));
 });
 audio.addEventListener('ended', () => {
   saveProgress(true);

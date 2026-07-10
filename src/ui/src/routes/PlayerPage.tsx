@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { usePlayerStore } from '../store/player';
 import { listBooks, fileMetadata, coverUrl } from '../api/books';
 import { getBookProgress } from '../api/progress';
-import { resolveResumePoint } from '../lib/playerResume';
+import { resolveResumePoint, getLocalProgress } from '../lib/playerResume';
 import { loadBook, togglePlay, skip } from '../player/engine';
+import { getOfflineBookData } from '../offline/storage';
 import { Seeker } from '../components/player/Seeker';
 import { PlaybackSpeedMenu } from '../components/player/PlaybackSpeedMenu';
 import { SleepTimerSheet } from '../components/player/SleepTimerSheet';
@@ -14,14 +15,24 @@ import { PlayIcon, PauseIcon, RewindIcon, ForwardIcon, ChevronDownIcon } from '.
 import '../components/player/player.css';
 
 async function loadPlayerData(bookId: number) {
-  const [books, files, progress] = await Promise.all([
-    listBooks(),
-    fileMetadata(bookId),
-    getBookProgress(bookId),
-  ]);
-  const book = books.find((b) => b.id === bookId);
-  if (!book) throw new Error('Book not found');
-  return { book, files, resume: resolveResumePoint(files, progress) };
+  try {
+    const [books, files, progress] = await Promise.all([
+      listBooks(),
+      fileMetadata(bookId),
+      getBookProgress(bookId),
+    ]);
+    const book = books.find((b) => b.id === bookId);
+    if (!book) throw new Error('Book not found');
+    return { book, files, resume: resolveResumePoint(files, progress) };
+  } catch (e) {
+    // Network unreachable (or book not found live) — fall back to a
+    // downloaded book's local metadata snapshot so cold-starting the app
+    // offline can still reach playback instead of dead-ending here.
+    const offline = await getOfflineBookData(bookId);
+    if (!offline) throw e;
+    const progress = getLocalProgress(bookId);
+    return { book: offline.book, files: offline.files, resume: resolveResumePoint(offline.files, progress) };
+  }
 }
 
 export function PlayerPage() {
