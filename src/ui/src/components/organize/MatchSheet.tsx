@@ -4,7 +4,7 @@ import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
 import { Pill } from '../ui/Pill';
 import { matchBookCandidates, applyBookMatch } from '../../api/scan';
-import { coverUrl } from '../../api/books';
+import { coverUrl, bumpCoverCache } from '../../api/books';
 import { SCAN_KEYS } from '../../hooks/useOrganize';
 import { LIBRARY_KEYS } from '../../hooks/useLibraryBooks';
 import { SearchIcon } from './icons';
@@ -54,6 +54,7 @@ export function MatchSheet({ open, onClose, bookId }: MatchSheetProps) {
         apply_cover: applyCover,
       }),
     onSuccess: (_data, candidate) => {
+      if (applyCover) bumpCoverCache(data?.book_cover_art ?? null);
       queryClient.invalidateQueries({ queryKey: SCAN_KEYS.files });
       queryClient.invalidateQueries({ queryKey: LIBRARY_KEYS.books });
       setApplied(candidate);

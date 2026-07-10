@@ -31,8 +31,9 @@ import { PlayIcon } from '../components/player/icons';
 import { DownloadIcon } from '../components/ui/icons';
 import { SetSeriesSheet } from '../components/library/SetSeriesSheet';
 import '../components/library/BookDetailPage.css';
+import '../components/organize/organize.css';
 
-type DetailSheet = 'rename' | 'move' | 'merge' | 'series' | null;
+type DetailSheet = 'rename' | 'move' | 'merge' | 'series' | 'move-files' | null;
 
 export function BookDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -41,6 +42,7 @@ export function BookDetailPage() {
   const [downloaded, setDownloaded] = useState(false);
   const [matchOpen, setMatchOpen] = useState(false);
   const [sheet, setSheet] = useState<DetailSheet>(null);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
 
   const { data: books = [], isLoading: booksLoading } = useLibraryBooks();
 
@@ -77,7 +79,21 @@ export function BookDetailPage() {
     [tree, bookId],
   );
   const fileIds = useMemo(() => bookGroup?.files.map((f) => f.id) ?? [], [bookGroup]);
+  const filePathToScanId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const f of bookGroup?.files ?? []) map.set(f.file_path, f.id);
+    return map;
+  }, [bookGroup]);
   const applyChanges = useApplyChanges();
+
+  function toggleSelectFile(id: number) {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function handlePick(target: PickResult) {
     if (sheet === 'move') {
@@ -112,6 +128,36 @@ export function BookDetailPage() {
         },
       ]);
       navigate('/');
+    } else if (sheet === 'move-files') {
+      const selectedScanIds = files
+        .filter((f) => selectedFileIds.has(f.id))
+        .map((f) => filePathToScanId.get(f.file_path))
+        .filter((id): id is number => id !== undefined);
+      if (selectedScanIds.length > 0) {
+        if (target.kind === 'existing') {
+          applyChanges.mutate([
+            {
+              change_type: 'file-move',
+              file_ids: selectedScanIds,
+              new_book_id: target.bookId,
+              new_author: target.author,
+              new_series: target.series,
+            },
+          ]);
+        } else {
+          applyChanges.mutate([
+            {
+              change_type: 'file-move',
+              file_ids: selectedScanIds,
+              new_book_id: -1,
+              new_author: target.author,
+              new_series: target.title,
+            },
+          ]);
+        }
+        if (selectedFileIds.size >= files.length) navigate('/');
+      }
+      setSelectedFileIds(new Set());
     }
     setSheet(null);
   }
@@ -223,11 +269,35 @@ export function BookDetailPage() {
       <div className="file-list">
         {files.map((file) => (
           <div className="card file-list-item" key={file.id}>
+            {files.length > 1 && (
+              <input
+                type="checkbox"
+                className="file-checkbox"
+                checked={selectedFileIds.has(file.id)}
+                onChange={() => toggleSelectFile(file.id)}
+              />
+            )}
             <span className="file-list-name">{file.file_name}</span>
             <span className="file-list-duration">{formatDuration(file.duration)}</span>
           </div>
         ))}
       </div>
+
+      {selectedFileIds.size > 0 && (
+        <div className="organize-toolbar">
+          <span>
+            {selectedFileIds.size} file{selectedFileIds.size === 1 ? '' : 's'} selected
+          </span>
+          <div className="organize-toolbar-actions">
+            <Button variant="ghost" onClick={() => setSelectedFileIds(new Set())}>
+              Clear
+            </Button>
+            <Button variant="primary" onClick={() => setSheet('move-files')}>
+              <MoveIcon size={14} /> Move
+            </Button>
+          </div>
+        </div>
+      )}
 
       <MatchSheet open={matchOpen} onClose={() => setMatchOpen(false)} bookId={book.id} />
 
@@ -262,6 +332,16 @@ export function BookDetailPage() {
         title="Merge into…"
         tree={tree}
         excludeBookId={bookId}
+        onPick={handlePick}
+      />
+
+      <PickBookSheet
+        open={sheet === 'move-files'}
+        onClose={() => setSheet(null)}
+        title={`Move ${selectedFileIds.size} file${selectedFileIds.size === 1 ? '' : 's'} to…`}
+        tree={tree}
+        excludeBookId={bookId}
+        allowCreateNew
         onPick={handlePick}
       />
 

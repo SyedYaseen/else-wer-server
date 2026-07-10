@@ -103,13 +103,14 @@
 
 .file-list-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md);
 }
 
 .file-list-name {
+  flex: 1;
+  min-width: 0;
   font-size: var(--text-md);
   overflow: hidden;
   text-overflow: ellipsis;

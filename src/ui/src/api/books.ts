@@ -31,6 +31,18 @@ export async function rescanFiles(): Promise<void> {
   await api.get('/scan_files');
 }
 
+// The server writes replacement cover art to the same path/filename as the old
+// one (see book_cover.rs), so the URL doesn't change when a cover is replaced.
+// Track a per-path cache-bust token so callers who just replaced a cover can
+// force the browser to refetch instead of showing the stale cached image.
+const coverBust = new Map<string, number>();
+
+export function bumpCoverCache(coverArt: string | null | undefined): void {
+  if (coverArt) coverBust.set(coverArt, Date.now());
+}
+
 export function coverUrl(coverArt: string | null): string | null {
-  return coverArt ? `/api${coverArt}` : null;
+  if (!coverArt) return null;
+  const bust = coverBust.get(coverArt);
+  return `/api${coverArt}${bust ? `?v=${bust}` : ''}`;
 }
