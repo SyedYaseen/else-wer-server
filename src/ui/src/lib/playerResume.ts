@@ -1,4 +1,5 @@
 import type { FileMetadata, Progress } from '../types/book';
+import { updateProgress } from '../api/progress';
 
 export interface ResumePoint {
   index: number;
@@ -26,6 +27,36 @@ export function resolveResumePoint(files: FileMetadata[], progress: Progress[]):
 
   if (index === -1) return { index: 0, startSec: 0 };
   return { index, startSec: mostRecent.complete ? 0 : mostRecent.progress_ms / 1000 };
+}
+
+// Port of else-wer-app's data/lib/conflict-handling.ts local/server merge: compares
+// the single cached local row (see saveLocalProgress) against the server's most recent
+// row by updated_at, pushes the local row up if it's newer (covers progress made while
+// offline, or a push that silently failed), and resolves from whichever side won.
+export function reconcileProgress(
+  files: FileMetadata[],
+  serverProgress: Progress[],
+  localProgress: Progress[],
+): ResumePoint {
+  if (localProgress.length === 0) return resolveResumePoint(files, serverProgress);
+
+  const local = localProgress[0];
+  const serverMostRecent =
+    serverProgress.length > 0
+      ? serverProgress.reduce((prev, curr) => (new Date(prev.updated_at) > new Date(curr.updated_at) ? prev : curr))
+      : null;
+
+  if (!serverMostRecent || new Date(local.updated_at) > new Date(serverMostRecent.updated_at)) {
+    updateProgress({
+      book_id: local.book_id,
+      file_id: local.file_id,
+      progress_ms: local.progress_ms,
+      complete: local.complete,
+    }).catch((e) => console.error('progress push-back failed', e));
+    return resolveResumePoint(files, [local]);
+  }
+
+  return resolveResumePoint(files, serverProgress);
 }
 
 const LOCAL_PROGRESS_PREFIX = 'else-wer-progress-';

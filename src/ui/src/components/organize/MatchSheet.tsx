@@ -113,7 +113,7 @@ export function MatchSheet({ open, onClose, bookId }: MatchSheetProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit" className="icon-btn" aria-label="Search">
+        <button type="submit" className="icon-btn" aria-label="Search" title="Search">
           <SearchIcon />
         </button>
       </form>

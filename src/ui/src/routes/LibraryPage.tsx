@@ -15,6 +15,7 @@ import { useBookSearch } from '../hooks/useBookSearch';
 import { useInstallPrompt } from '../pwa/useInstallPrompt';
 import { buildContinueListening } from '../lib/continueListening';
 import { groupByAuthor, groupBySeries } from '../lib/groupBooks';
+import { RefreshIcon, ChecklistIcon, DownloadIcon, LogoutIcon } from '../components/ui/icons';
 import '../components/library/library.css';
 
 const LIBRARY_TABS = [
@@ -97,7 +98,7 @@ export function LibraryPage() {
         </div>
         <div className="library-actions">
           <Button variant="secondary" onClick={handleRescan} disabled={scanning}>
-            {scanning ? 'Scanning…' : 'Rescan'}
+            <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
           <Link className="library-organize-link" to="/organize">
             Organize
@@ -105,9 +106,17 @@ export function LibraryPage() {
           <ActionMenu
             items={[
               books.length > 0 &&
-                !selectMode && { label: 'Select books', onClick: () => setSelectMode(true) },
-              canInstall && { label: 'Install app', onClick: handleInstallClick },
-              { label: 'Log out', onClick: logout },
+                !selectMode && {
+                  label: 'Select books',
+                  icon: <ChecklistIcon size={16} />,
+                  onClick: () => setSelectMode(true),
+                },
+              canInstall && {
+                label: 'Install app',
+                icon: <DownloadIcon size={16} />,
+                onClick: handleInstallClick,
+              },
+              { label: 'Log out', icon: <LogoutIcon size={16} />, onClick: logout },
             ]}
           />
         </div>
@@ -131,7 +140,7 @@ export function LibraryPage() {
           <div className="library-state-title">No audiobooks yet</div>
           <p>Scan your server to discover audiobooks.</p>
           <Button variant="primary" onClick={handleRescan} disabled={scanning}>
-            {scanning ? 'Scanning…' : 'Scan for audiobooks'}
+            <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Scan for audiobooks'}
           </Button>
         </div>
       )}

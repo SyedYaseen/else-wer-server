@@ -76,5 +76,5 @@ pub async fn update_progress(
         })?;
 
     tracing::debug!("Upsert succeeded");
-    Ok(StatusCode::ACCEPTED)
+    Ok(StatusCode::NO_CONTENT)
 }

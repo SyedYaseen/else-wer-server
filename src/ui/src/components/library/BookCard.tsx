@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { AudioBookRow } from '../../types/book';
 import { coverUrl } from '../../api/books';
+import { CheckIcon } from '../ui/icons';
 import './library.css';
 
 interface BookCardProps {
@@ -36,9 +37,11 @@ export function BookCard({ book, selectable, selected, onToggleSelect }: BookCar
         className={`book-card book-card-selectable${selected ? ' book-card-selected' : ''}`}
         onClick={() => onToggleSelect?.(book.id)}
         aria-pressed={selected}
+        aria-label={`Select ${book.title}`}
+        title={`Select ${book.title}`}
       >
         <span className="book-card-check" aria-hidden>
-          {selected ? '✓' : ''}
+          {selected && <CheckIcon size={14} />}
         </span>
         {body}
       </button>

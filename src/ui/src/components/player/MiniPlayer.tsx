@@ -36,6 +36,7 @@ export function MiniPlayer() {
           togglePlay();
         }}
         aria-label={playing ? 'Pause' : 'Play'}
+        title={playing ? 'Pause' : 'Play'}
       >
         {playing ? <PauseIcon size={36} /> : <PlayIcon size={36} />}
       </button>

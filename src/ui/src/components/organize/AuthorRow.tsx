@@ -41,6 +41,7 @@ export function AuthorRow({
         <button
           className="icon-btn"
           aria-label="Rename author"
+          title="Rename author"
           onClick={(e) => {
             e.stopPropagation();
             onRenameAuthor(group.author);

@@ -1,3 +1,4 @@
+import { CloseIcon } from '../ui/icons';
 import './library.css';
 
 interface SearchBarProps {
@@ -20,8 +21,13 @@ export function SearchBar({ value, onChange, resultCount, hasQuery }: SearchBarP
           autoCapitalize="none"
         />
         {value.length > 0 && (
-          <button className="search-bar-clear" onClick={() => onChange('')} aria-label="Clear search">
-            ×
+          <button
+            className="search-bar-clear"
+            onClick={() => onChange('')}
+            aria-label="Clear search"
+            title="Clear search"
+          >
+            <CloseIcon size={14} />
           </button>
         )}
       </div>

@@ -48,13 +48,28 @@ export function BookRow({
         </div>
       </div>
       <div className="book-actions" onClick={(e) => e.stopPropagation()}>
-        <button className="icon-btn" aria-label="Rename or move to a different author" onClick={() => onRenameBook(book)}>
+        <button
+          className="icon-btn"
+          aria-label="Rename or move to a different author"
+          title="Rename or move to a different author"
+          onClick={() => onRenameBook(book)}
+        >
           <PencilIcon />
         </button>
-        <button className="icon-btn" aria-label="Merge into another book" onClick={() => onMergeBook(book)}>
+        <button
+          className="icon-btn"
+          aria-label="Merge into another book"
+          title="Merge into another book"
+          onClick={() => onMergeBook(book)}
+        >
           <MergeIcon />
         </button>
-        <button className="icon-btn" aria-label="Match metadata" onClick={() => onMatchBook(book)}>
+        <button
+          className="icon-btn"
+          aria-label="Match metadata"
+          title="Match metadata"
+          onClick={() => onMatchBook(book)}
+        >
           <SearchIcon />
         </button>
       </div>

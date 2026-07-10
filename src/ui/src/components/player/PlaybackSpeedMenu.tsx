@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BottomSheet } from '../ui/BottomSheet';
 import { usePlayerStore } from '../../store/player';
 import { setRate } from '../../player/engine';
+import { SpeedIcon } from './icons';
 import './player.css';
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -9,10 +10,17 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 export function PlaybackSpeedMenu() {
   const [open, setOpen] = useState(false);
   const rate = usePlayerStore((s) => s.rate);
+  const label = `Playback speed, ${rate}x`;
 
   return (
     <>
-      <button className="player-secondary-btn" onClick={() => setOpen(true)}>
+      <button
+        className="player-secondary-btn"
+        onClick={() => setOpen(true)}
+        aria-label={label}
+        title={label}
+      >
+        <SpeedIcon size={18} />
         <span className="player-speed-label">{rate}x</span>
       </button>
       <BottomSheet open={open} onClose={() => setOpen(false)}>

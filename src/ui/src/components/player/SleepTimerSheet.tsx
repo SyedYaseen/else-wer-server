@@ -23,10 +23,18 @@ export function SleepTimerSheet() {
 
   const remainingMin = endsAt ? Math.max(0, Math.ceil((endsAt - Date.now()) / 60_000)) : null;
   const active = endsAt !== null || endOfChapter;
+  const label = active
+    ? `Sleep timer — ${endOfChapter ? 'stopping at end of chapter' : `${remainingMin} min left`}`
+    : 'Sleep timer';
 
   return (
     <>
-      <button className="player-secondary-btn" onClick={() => setOpen(true)}>
+      <button
+        className="player-secondary-btn"
+        onClick={() => setOpen(true)}
+        aria-label={label}
+        title={label}
+      >
         <SleepIcon />
         {active && <span className="player-secondary-badge" />}
       </button>

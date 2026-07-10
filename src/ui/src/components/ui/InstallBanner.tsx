@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from './Button';
 import { InstallSheet } from './InstallSheet';
 import { useInstallPrompt } from '../../pwa/useInstallPrompt';
+import { CloseIcon } from './icons';
 import './ui.css';
 
 const DISMISS_KEY = 'elsewer-install-dismissed-at';
@@ -45,8 +46,13 @@ export function InstallBanner() {
         <Button variant="primary" onClick={handleInstallClick}>
           Install
         </Button>
-        <button className="install-banner-close" onClick={handleDismiss} aria-label="Dismiss">
-          ×
+        <button
+          className="install-banner-close"
+          onClick={handleDismiss}
+          aria-label="Dismiss"
+          title="Dismiss"
+        >
+          <CloseIcon size={16} />
         </button>
       </div>
       <InstallSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />

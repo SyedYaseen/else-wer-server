@@ -18,7 +18,7 @@ export function FileRow({ file, selected, onToggleSelect, onRename }: FileRowPro
         onChange={() => onToggleSelect(file.id)}
       />
       <span className="file-row-name">{file.file_name}</span>
-      <button className="icon-btn" aria-label="Rename file" onClick={() => onRename(file)}>
+      <button className="icon-btn" aria-label="Rename file" title="Rename file" onClick={() => onRename(file)}>
         <PencilIcon size={14} />
       </button>
     </div>

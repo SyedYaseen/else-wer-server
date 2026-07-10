@@ -13,7 +13,12 @@ export function ChaptersSheet() {
 
   return (
     <>
-      <button className="player-secondary-btn" onClick={() => setOpen(true)}>
+      <button
+        className="player-secondary-btn"
+        onClick={() => setOpen(true)}
+        aria-label="Chapters"
+        title="Chapters"
+      >
         <ChaptersIcon />
       </button>
       <BottomSheet open={open} onClose={() => setOpen(false)}>

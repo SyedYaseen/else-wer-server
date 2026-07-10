@@ -27,6 +27,7 @@ export function ActionMenu({ items, title = 'More actions' }: ActionMenuProps) {
         type="button"
         className="action-menu-trigger"
         aria-label="More actions"
+        title="More actions"
         onClick={() => setOpen(true)}
       >
         <MoreIcon size={18} />

@@ -38,6 +38,10 @@
   color: var(--color-background);
 }
 
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
 .card {
   background: var(--color-surface);
   border: 0.5px solid var(--color-ink-hairline);

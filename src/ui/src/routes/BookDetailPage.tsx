@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fileMetadata, coverUrl } from '../api/books';
 import { getBookProgress } from '../api/progress';
-import { resolveResumePoint, getLocalProgress } from '../lib/playerResume';
-import type { AudioBookRow, FileMetadata, Progress } from '../types/book';
+import { resolveResumePoint, reconcileProgress, getLocalProgress } from '../lib/playerResume';
+import type { AudioBookRow, FileMetadata } from '../types/book';
 import { loadBook } from '../player/engine';
 import { useLibraryBooks, LIBRARY_KEYS } from '../hooks/useLibraryBooks';
 import { useScannedFiles, useApplyChanges } from '../hooks/useOrganize';
@@ -19,7 +19,16 @@ import { startDownload, useDownloadStore } from '../offline/downloadStore';
 import { MatchSheet } from '../components/organize/MatchSheet';
 import { RenameSheet } from '../components/organize/RenameSheet';
 import { PickBookSheet, type PickResult } from '../components/organize/PickBookSheet';
-import { SearchIcon, PencilIcon, MoveIcon, MergeIcon, LayersIcon } from '../components/organize/icons';
+import {
+  SearchIcon,
+  PencilIcon,
+  MoveIcon,
+  MergeIcon,
+  LayersIcon,
+  ChevronRightIcon,
+} from '../components/organize/icons';
+import { PlayIcon } from '../components/player/icons';
+import { DownloadIcon } from '../components/ui/icons';
 import { SetSeriesSheet } from '../components/library/SetSeriesSheet';
 import '../components/library/BookDetailPage.css';
 
@@ -126,13 +135,13 @@ export function BookDetailPage() {
 
   async function handlePlay() {
     if (!book) return;
-    let progress: Progress[];
+    let resume: ReturnType<typeof resolveResumePoint>;
     try {
-      progress = await getBookProgress(book.id);
+      const progress = await getBookProgress(book.id);
+      resume = reconcileProgress(files, progress, getLocalProgress(book.id));
     } catch {
-      progress = getLocalProgress(book.id);
+      resume = resolveResumePoint(files, getLocalProgress(book.id));
     }
-    const resume = resolveResumePoint(files, progress);
     loadBook(book, files, resume);
     navigate(`/player/${book.id}`);
   }
@@ -143,7 +152,7 @@ export function BookDetailPage() {
     return (
       <div className="book-detail-page">
         <Link to="/" className="book-detail-back">
-          ← Back to library
+  <ChevronRightIcon size={16} className="rotate-180" /> Back to library
         </Link>
         {!pending && <p>Book not found.</p>}
       </div>
@@ -155,7 +164,7 @@ export function BookDetailPage() {
   return (
     <div className="book-detail-page">
       <Link to="/" className="book-detail-back">
-        ← Back to library
+<ChevronRightIcon size={16} className="rotate-180" /> Back to library
       </Link>
 
       <div className="book-detail-header">
@@ -178,9 +187,10 @@ export function BookDetailPage() {
           {book.narrated_by && <p className="book-detail-meta">Narrated by {book.narrated_by}</p>}
           <div className="book-detail-actions">
             <Button variant="primary" onClick={handlePlay} disabled={files.length === 0}>
-              Play
+              <PlayIcon size={16} /> Play
             </Button>
             <Button variant="secondary" onClick={handleDownload} disabled={downloading || files.length === 0}>
+              <DownloadIcon size={16} />{' '}
               {downloading ? 'Downloading…' : downloaded || dl?.status === 'done' ? 'Downloaded' : 'Download'}
             </Button>
             <ActionMenu

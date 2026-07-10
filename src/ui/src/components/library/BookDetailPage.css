@@ -6,7 +6,9 @@
 }
 
 .book-detail-back {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   margin-bottom: var(--space-lg);
   color: var(--color-ink-subtle);
   text-decoration: none;

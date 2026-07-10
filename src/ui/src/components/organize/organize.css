@@ -16,6 +16,12 @@
   border-bottom: 0.5px solid var(--color-ink-hairline);
 }
 
+.organize-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
 .organize-title {
   font-size: var(--text-xxl);
   line-height: 1.2;
@@ -36,6 +42,9 @@
 }
 
 .organize-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   font-size: var(--text-sm);
   color: var(--color-ink-muted);
 }
@@ -429,6 +438,50 @@
   font-size: var(--text-sm);
   color: var(--color-ink-subtle);
   margin-top: 4px;
+}
+
+/* ── OrganizeHelpSheet ────────────────────────────────────────────────── */
+
+.help-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.help-legend-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.help-legend-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-deep);
+  color: var(--color-ink-muted);
+}
+
+.help-legend-name {
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.help-legend-description {
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+}
+
+.help-legend-tip {
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  margin-bottom: var(--space-lg);
 }
 
 /* ── RenameSheet ──────────────────────────────────────────────────────── */

@@ -89,6 +89,26 @@ export function SleepIcon({ size = 22, className }: IconProps) {
   );
 }
 
+export function SpeedIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M4.5 17a8 8 0 1 1 15 0" />
+      <path d="M12 13l3.5-4" />
+      <circle cx="12" cy="13" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function NowPlayingIcon({ size = 14, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>

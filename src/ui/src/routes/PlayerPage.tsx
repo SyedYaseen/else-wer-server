@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usePlayerStore } from '../store/player';
 import { listBooks, fileMetadata, coverUrl } from '../api/books';
 import { getBookProgress } from '../api/progress';
-import { resolveResumePoint, getLocalProgress } from '../lib/playerResume';
+import { resolveResumePoint, reconcileProgress, getLocalProgress } from '../lib/playerResume';
 import { loadBook, togglePlay, skip } from '../player/engine';
 import { getOfflineBookData } from '../offline/storage';
 import { Seeker } from '../components/player/Seeker';
@@ -23,7 +23,8 @@ async function loadPlayerData(bookId: number) {
     ]);
     const book = books.find((b) => b.id === bookId);
     if (!book) throw new Error('Book not found');
-    return { book, files, resume: resolveResumePoint(files, progress) };
+    const local = getLocalProgress(bookId);
+    return { book, files, resume: reconcileProgress(files, progress, local) };
   } catch (e) {
     // Network unreachable (or book not found live) — fall back to a
     // downloaded book's local metadata snapshot so cold-starting the app
@@ -76,7 +77,7 @@ export function PlayerPage() {
 
   return (
     <div className="player-page">
-      <button className="player-back" onClick={() => navigate(-1)} aria-label="Back">
+      <button className="player-back" onClick={() => navigate(-1)} aria-label="Back" title="Back">
         <ChevronDownIcon />
       </button>
 
@@ -101,13 +102,28 @@ export function PlayerPage() {
       <Seeker currentTime={currentTime} duration={duration} />
 
       <div className="player-transport">
-        <button className="player-transport-btn" onClick={() => skip(-30)} aria-label="Back 30 seconds">
+        <button
+          className="player-transport-btn"
+          onClick={() => skip(-30)}
+          aria-label="Back 30 seconds"
+          title="Back 30 seconds"
+        >
           <RewindIcon size={36} />
         </button>
-        <button className="player-transport-play" onClick={togglePlay} aria-label={playing ? 'Pause' : 'Play'}>
+        <button
+          className="player-transport-play"
+          onClick={togglePlay}
+          aria-label={playing ? 'Pause' : 'Play'}
+          title={playing ? 'Pause' : 'Play'}
+        >
           {playing ? <PauseIcon size={56} /> : <PlayIcon size={56} />}
         </button>
-        <button className="player-transport-btn" onClick={() => skip(30)} aria-label="Forward 30 seconds">
+        <button
+          className="player-transport-btn"
+          onClick={() => skip(30)}
+          aria-label="Forward 30 seconds"
+          title="Forward 30 seconds"
+        >
           <ForwardIcon size={36} />
         </button>
       </div>

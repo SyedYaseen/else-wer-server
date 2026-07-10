@@ -6,7 +6,9 @@ import { AuthorRow } from '../components/organize/AuthorRow';
 import { PickBookSheet, type PickResult } from '../components/organize/PickBookSheet';
 import { RenameSheet } from '../components/organize/RenameSheet';
 import { MatchSheet } from '../components/organize/MatchSheet';
-import { MoveIcon, LayersIcon } from '../components/organize/icons';
+import { OrganizeHelpSheet } from '../components/organize/OrganizeHelpSheet';
+import { MoveIcon, LayersIcon, SearchIcon, ChevronRightIcon } from '../components/organize/icons';
+import { RefreshIcon } from '../components/ui/icons';
 import { SetSeriesSheet, type SetSeriesBook } from '../components/library/SetSeriesSheet';
 import {
   useScannedFiles,
@@ -133,7 +135,10 @@ export function OrganizePage() {
     <div className="organize-page">
       <div className="organize-header">
         <div>
-          <h1 className="organize-title">Organize</h1>
+          <div className="organize-title-row">
+            <h1 className="organize-title">Organize</h1>
+            <OrganizeHelpSheet />
+          </div>
           <p className="organize-subtitle">Rename, move, merge, and match scanned files</p>
           {backfillMetadata.data && (
             <p className="organize-subtitle">
@@ -144,19 +149,20 @@ export function OrganizePage() {
         </div>
         <div className="organize-actions">
           <Button variant="secondary" onClick={handleRescan} disabled={scanning}>
-            {scanning ? 'Scanning…' : 'Rescan'}
+            <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
           <ActionMenu
             items={[
               {
                 label: backfillMetadata.isPending ? 'Fetching metadata…' : 'Fetch missing metadata',
+                icon: <SearchIcon size={16} />,
                 onClick: () => backfillMetadata.mutate(),
                 disabled: backfillMetadata.isPending,
               },
             ]}
           />
           <Link className="organize-back-link" to="/">
-            Back to library
+            <ChevronRightIcon size={16} className="rotate-180" /> Back to library
           </Link>
         </div>
       </div>
