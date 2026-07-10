@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Else-wer is a audiobook player app using react native that for self hosted audiobook server.
-App: /home/loop/p/else-wer/else-wer-app
-Server (This): /home/loop/p/else-wer/else-wer-server
 pwa: /home/loop/p/else-wer/else-wer-server/src/ui
+Server (This): /home/loop/p/else-wer/else-wer-server
+App: /home/loop/p/else-wer/else-wer-app ( dont view or make changes here fo now)
 WebUI (potentially go away/ reworked) : A custom file organizer: /home/loop/p/else-wer/else-wer-web
 
 ## graphify

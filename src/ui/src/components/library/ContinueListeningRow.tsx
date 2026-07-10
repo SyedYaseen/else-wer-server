@@ -2,8 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import type { ContinueListeningItem } from '../../lib/continueListening';
 import { coverUrl, fileMetadata } from '../../api/books';
 import { getBookProgress } from '../../api/progress';
-import { resolveResumePoint } from '../../lib/playerResume';
+import { resolveResumePoint, getLocalProgress } from '../../lib/playerResume';
 import { loadBook } from '../../player/engine';
+import { getOfflineBookData } from '../../offline/storage';
 import { ProgressBar } from '../ui/ProgressBar';
 import './library.css';
 
@@ -14,10 +15,24 @@ export function ContinueListeningRow({ items }: { items: ContinueListeningItem[]
   async function resumePlaying(bookId: number) {
     const book = items.find((i) => i.book.id === bookId)?.book;
     if (!book) return;
-    const [files, progress] = await Promise.all([fileMetadata(book.id), getBookProgress(book.id)]);
-    const resume = resolveResumePoint(files, progress);
-    loadBook(book, files, resume);
-    navigate(`/player/${book.id}`);
+    try {
+      const [files, progress] = await Promise.all([fileMetadata(book.id), getBookProgress(book.id)]);
+      const resume = resolveResumePoint(files, progress);
+      loadBook(book, files, resume);
+      navigate(`/player/${book.id}`);
+    } catch (e) {
+      // Network unreachable — fall back to the downloaded book's local
+      // metadata snapshot, same as PlayerPage's loadPlayerData.
+      const offline = await getOfflineBookData(bookId);
+      if (!offline) {
+        console.error('resumePlaying failed and no offline snapshot available', e);
+        return;
+      }
+      const progress = getLocalProgress(bookId);
+      const resume = resolveResumePoint(offline.files, progress);
+      loadBook(offline.book, offline.files, resume);
+      navigate(`/player/${bookId}`);
+    }
   }
 
   return (
