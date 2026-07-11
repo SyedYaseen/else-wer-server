@@ -7,7 +7,7 @@ export const LIBRARY_KEYS = {
 };
 
 export function useLibraryBooks() {
-  return useQuery({ queryKey: LIBRARY_KEYS.books, queryFn: listBooks });
+  return useQuery({ queryKey: LIBRARY_KEYS.books, queryFn: () => listBooks() });
 }
 
 export function useInProgressBooks() {

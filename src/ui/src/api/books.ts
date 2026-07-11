@@ -13,8 +13,9 @@ interface FileMetadataResponse {
   data: FileMetadata[];
 }
 
-export async function listBooks(): Promise<AudioBookRow[]> {
-  const data = await api.get<ListBooksResponse>('/list_books');
+export async function listBooks(q?: string): Promise<AudioBookRow[]> {
+  const query = q && q.trim().length > 0 ? `?q=${encodeURIComponent(q.trim())}` : '';
+  const data = await api.get<ListBooksResponse>(`/list_books${query}`);
   return data.books;
 }
 

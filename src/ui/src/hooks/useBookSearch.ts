@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { AudioBookRow } from '../types/book';
+import { listBooks } from '../api/books';
 
-// Ported from else-wer-app/components/hooks/useBooksSearch.ts (debounced client-side filter).
+// Debounced search: empty query returns the already-fetched `books` array
+// (zero network cost, preserves the instant default view); non-empty query
+// hits GET /list_books?q= server-side (src/db/audiobooks.rs::search_books)
+// instead of filtering client-side.
 export function useBookSearch(books: AudioBookRow[], delayMs = 200) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -15,23 +20,23 @@ export function useBookSearch(books: AudioBookRow[], delayMs = 200) {
     };
   }, [query, delayMs]);
 
-  let filtered = books;
-  if (debouncedQuery.trim().length > 0) {
-    const q = debouncedQuery.toLowerCase();
-    filtered = books.filter(
-      (book) =>
-        book.title?.toLowerCase().includes(q) ||
-        book.author?.toLowerCase().includes(q) ||
-        book.series?.toLowerCase().includes(q) ||
-        book.narrated_by?.toLowerCase().includes(q),
-    );
-  }
+  const trimmed = debouncedQuery.trim();
+  const hasQuery = trimmed.length > 0;
+
+  const { data: searchResults } = useQuery({
+    queryKey: ['books', 'search', trimmed],
+    queryFn: () => listBooks(trimmed),
+    enabled: hasQuery,
+    placeholderData: (prev) => prev,
+  });
+
+  const filtered = hasQuery ? (searchResults ?? []) : books;
 
   return {
     query,
     setQuery,
     debouncedQuery,
     filtered,
-    hasQuery: debouncedQuery.trim().length > 0,
+    hasQuery,
   };
 }

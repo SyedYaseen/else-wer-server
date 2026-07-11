@@ -20,6 +20,32 @@ pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiE
     Ok(books)
 }
 
+/// Same field set as the (now superseded) client-side filter in useBookSearch.ts,
+/// for result parity: title/author/series/narrated_by, case-insensitive substring.
+pub async fn search_books(db: &Pool<Sqlite>, q: &str) -> Result<Vec<AudioBookRow>, ApiError> {
+    let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let pattern = format!("%{escaped}%");
+
+    let books = sqlx::query_as::<_, AudioBookRow>(
+        r#"
+        SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
+               b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
+               b.user_locked, b.description, b.series_locked, s.name AS series_name
+        FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
+        WHERE b.title LIKE ?1 ESCAPE '\'
+           OR b.author LIKE ?1 ESCAPE '\'
+           OR b.series LIKE ?1 ESCAPE '\'
+           OR b.narrated_by LIKE ?1 ESCAPE '\'
+        ORDER BY b.author, b.series, b.title
+        "#,
+    )
+    .bind(pattern)
+    .fetch_all(db)
+    .await?;
+
+    Ok(books)
+}
+
 pub async fn get_book(db: &Pool<Sqlite>, book_id: i64) -> Result<AudioBookRow, ApiError> {
     let book = sqlx::query_as::<_, AudioBookRow>(
         r#"

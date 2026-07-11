@@ -3,7 +3,7 @@ use crate::api::match_meta::try_spawn_metadata_backfill;
 use crate::api::middleware::{AdminUser, OrganizeUser};
 use crate::db::audiobooks::{
     delete_book, get_book, get_file_path_by_id, get_files_by_book_id, list_all_books,
-    reorder_files,
+    reorder_files, search_books,
 };
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
@@ -16,7 +16,7 @@ use axum::extract::Multipart;
 use axum::{
     Json,
     body::Body,
-    extract::{Path, Request, State},
+    extract::{Path, Query, Request, State},
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
@@ -26,6 +26,7 @@ use sqlx::{Pool, Sqlite};
 use tower::util::ServiceExt;
 use tower_http::services::ServeFile;
 
+use serde::Deserialize;
 use serde_json::json;
 use std::io::Write;
 use std::path::PathBuf;
@@ -322,13 +323,24 @@ pub async fn delete_book_handler(
     ))
 }
 
-// List audiobooks from AudioBooks table
+#[derive(Deserialize)]
+pub struct ListBooksQuery {
+    q: Option<String>,
+}
+
+// List audiobooks from AudioBooks table, optionally filtered by `?q=` search term
+// (matches title/author/series/narrated_by, see db::audiobooks::search_books).
 pub async fn list_books_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
+    Query(params): Query<ListBooksQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
-    let books = list_all_books(&db).await?;
+    let q = params.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let books = match q {
+        Some(q) => search_books(db, q).await?,
+        None => list_all_books(&db).await?,
+    };
     Ok(Json(json!({
         "message": "Books list",
         "count": books.len(),
