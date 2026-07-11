@@ -13,13 +13,14 @@ const LEGEND = [
   {
     icon: <MoveIcon />,
     name: 'Move',
-    description: 'Take selected files and place them into a different book (or start a brand-new one).',
+    description:
+      'Take selected files, a whole book, or a whole author and place them under a different author or book (or start a brand-new one). Typing a name shows matching existing authors/books to pick from, so you don’t accidentally create a near-duplicate.',
   },
   {
     icon: <MergeIcon />,
     name: 'Merge',
     description:
-      "Combine an entire book's files into another existing book. This is hard to undo, so double-check before confirming.",
+      "Combine an entire book (or author) into another existing one, or into a brand-new one. This deletes the source once its files are moved, so double-check the confirmation dialog before confirming.",
   },
   {
     icon: <SearchIcon />,
@@ -59,6 +60,10 @@ export function OrganizeHelpSheet() {
             </div>
           ))}
         </div>
+        <p className="help-legend-tip">
+          Every action shows a confirmation screen describing exactly what will change before
+          anything is saved — nothing is applied until you tap Confirm there.
+        </p>
         <p className="help-legend-tip">
           Tip: on your phone, press and hold a button with just an icon to see what it does. On a
           computer, hover your mouse over it.

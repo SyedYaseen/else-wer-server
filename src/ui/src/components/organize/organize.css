@@ -231,6 +231,15 @@
   background: var(--color-surface-deep);
 }
 
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  background: none;
+}
+
 /* ── Selection toolbar ────────────────────────────────────────────────── */
 
 .organize-toolbar {
@@ -489,4 +498,82 @@
 .rename-form {
   display: flex;
   flex-direction: column;
+}
+
+/* ── SearchableCombobox ───────────────────────────────────────────────── */
+
+.combobox {
+  position: relative;
+}
+
+.combobox-panel {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-ink-hairline);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.combobox-panel-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.combobox-item {
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.combobox-item:hover {
+  background: var(--color-surface-deep);
+}
+
+.combobox-item-create {
+  color: var(--color-accent);
+  font-weight: 500;
+  border-bottom: 0.5px solid var(--color-ink-hairline);
+  text-transform: none;
+}
+
+.combobox-empty {
+  padding: 8px 10px;
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+}
+
+/* ── ConfirmActionSheet ───────────────────────────────────────────────── */
+
+.confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.confirm-list-item {
+  font-size: var(--text-md);
+  color: var(--color-ink);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface-deep);
+  border-radius: var(--radius-sm);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
 }

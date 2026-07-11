@@ -1,9 +1,10 @@
 use axum::{
-    Router,
+    Json, Router,
     extract::{DefaultBodyLimit, State},
     response::{Html, IntoResponse},
     routing::{get, post, put},
 };
+use serde_json::json;
 use tower_http::services::ServeDir;
 pub mod api_error;
 mod audiobooks;
@@ -17,8 +18,8 @@ use crate::{
     api::{
         audiobooks::{
             delete_book_handler, download_book, file_metadata_handler, list_books_handler,
-            list_scanned_files_handler, save_organized_files_handler, stream_file,
-            upload_handler,
+            list_scanned_files_handler, reorder_files_handler, save_organized_files_handler,
+            stream_file, upload_handler,
         },
         match_meta::{apply_book_match, assign_series, backfill_metadata, match_book_candidates},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
@@ -35,6 +36,7 @@ pub async fn routes() -> Router<AppState> {
     Router::new()
         .nest_service("/covers", ServeDir::new("covers"))
         .route("/hello", get(hello))
+        .route("/health", get(health_handler))
         // bookscan + edit
         .route("/scan_files", get(scan_files_handler))
         .route("/list_scanned_files", get(list_scanned_files_handler))
@@ -55,6 +57,10 @@ pub async fn routes() -> Router<AppState> {
         .route("/download_book/{book_id}", get(download_book)) // TODO: This might be obsolete
         .route("/stream/{id}", get(stream_file)) // GET also matches HEAD; ServeFile handles it
         .route("/file_metadata/{book_id}", get(file_metadata_handler))
+        .route(
+            "/file_metadata/{book_id}/reorder",
+            post(reorder_files_handler),
+        )
         // Sync
         .route("/list_inprogress", get(list_inprogress))
         .route(
@@ -71,6 +77,14 @@ pub async fn routes() -> Router<AppState> {
         .route("/user/change_password", put(change_password))
         .route("/login", post(login))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 10))
+}
+
+// Unauthenticated liveness probe backing the client's server-reachability
+// indicator. No AuthUser extractor and no State access, so it's cheap enough
+// to poll every few seconds indefinitely. Deliberately separate from /hello
+// (a scratch/debug endpoint, not stable infra).
+async fn health_handler() -> impl IntoResponse {
+    Json(json!({ "status": "ok" }))
 }
 
 async fn hello(State(_state): State<AppState>) -> impl IntoResponse {

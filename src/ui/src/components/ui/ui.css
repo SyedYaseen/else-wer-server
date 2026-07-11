@@ -9,7 +9,20 @@
   font-size: var(--text-md);
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.btn:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .btn:disabled {
@@ -100,6 +113,15 @@
   transition: color 0.15s ease, border-color 0.15s ease;
 }
 
+.tab:hover {
+  color: var(--color-ink);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .tab-active {
   color: var(--color-ink);
   border-bottom-color: var(--color-accent);
@@ -135,6 +157,10 @@
 .sheet-panel {
   width: 100%;
   max-width: 560px;
+  max-height: 85vh;
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--color-surface);
   border-top: 0.5px solid var(--color-ink-hairline);
   border-top-left-radius: var(--radius-xl);
@@ -155,6 +181,20 @@
   background: var(--color-surface);
   color: var(--color-ink-muted);
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.action-menu-trigger:hover {
+  background: var(--color-surface-deep);
+}
+
+.action-menu-trigger:active {
+  transform: scale(0.95);
+}
+
+.action-menu-trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .action-menu-list {
@@ -177,6 +217,20 @@
   font-size: var(--text-md);
   text-align: left;
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.action-menu-item:not(:disabled):hover {
+  background: var(--color-surface-deep);
+}
+
+.action-menu-item:not(:disabled):active {
+  background: var(--color-ink-hairline);
+}
+
+.action-menu-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .action-menu-item:disabled {
@@ -236,4 +290,135 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+}
+
+.toast-stack {
+  position: fixed;
+  top: var(--space-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 420px;
+  padding: 0 var(--space-lg);
+  pointer-events: none;
+}
+
+.network-banner {
+  position: fixed;
+  top: var(--space-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-warning);
+  color: var(--color-warning);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.reorder-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: var(--space-md);
+}
+
+.reorder-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 0.5px solid var(--color-ink-hairline);
+}
+
+.reorder-row:last-child {
+  border-bottom: none;
+}
+
+.reorder-index {
+  flex-shrink: 0;
+  width: 20px;
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  text-align: right;
+}
+
+.reorder-name {
+  flex: 1;
+  font-size: var(--text-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reorder-duration {
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+}
+
+.reorder-controls {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.reorder-controls .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.reorder-error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.reorder-state {
+  color: var(--color-ink-subtle);
+  padding: var(--space-md) 0;
+}
+
+.toast {
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-ink-hairline);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+  animation: toast-in 0.15s ease;
+}
+
+.toast-success {
+  border-color: var(--color-sage);
+  color: var(--color-sage);
+}
+
+.toast-error {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.toast-info {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

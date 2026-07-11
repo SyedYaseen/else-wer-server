@@ -1,5 +1,25 @@
 claude --resume 9eac5d8b-7658-4a9c-b02f-5960480a7c81 -  admin panel
 
+
+claude --resume 5cdba16e-9d7f-4c2e-acc5-bdd8f5092ed4
+Root cause of the duplicate-author bug: there's no authors table server-side (author is a free-text column), and grouping in the UI is exact-string match. The "create new book" and rename flows used plain text inputs with no autocomplete, so any typo/case/whitespace mismatch silently created a second author bucket instead of merging.
+
+Frontend (src/ui/src/...):
+- New SearchableCombobox.tsx — generic filter-as-you-type combobox with a "Create new: …" fallback, used everywhere an author/book target is picked.
+- New PickAuthorSheet.tsx — lightweight author-only picker for the new author-level actions.
+- New ConfirmActionSheet.tsx + lib/describeChanges.ts — every action now stages its changes and shows a human-readable dry-run (files affected, merge vs. rename, which book/author becomes empty and gets deleted) before anything is submitted.
+- PickBookSheet.tsx and RenameSheet.tsx now use the combobox instead of free text for author/book fields; merge-into-book now also supports creating a brand-new destination book.
+- AuthorRow.tsx gained explicit "Move to author…" / "Merge into author…" buttons (parity with book-level actions).
+- OrganizePage.tsx wires the new sheets and the confirm-before-apply flow.
+- OrganizeHelpSheet.tsx updated to document the new actions and the confirmation step.
+
+Backend (src/db/meta_scan.rs):
+- Extracted the "create new book" logic into a shared resolve_or_create_dest_book helper, now used by both FileMove and MergeTitle — so merging into a brand-new book correctly migrates playback progress and cleans up the source book, not just file-moves.
+
+Verified: npm run build (tsc + vite), npm run lint (oxlint), cargo build, and cargo test meta_scan (all 11 existing tests still pass) — all clean. Stray-file cleanup (issue #5) required no new code path; it's automatically fixed by the combobox + dry-run since it reuses the existing "Move selected files" flow.
+
+Not done (flagged in the plan, out of scope unless you want it): the else-wer-web reference's per-item confirm/undo on a persistent change queue was itself unfinished there — I implemented a simpler single-action confirm step instead, which covers the "dry run before every operation" ask without that added complexity.
+
 # Phase 1 Technical Plan (Rust server on Pi Zero)
 ## File Scanning
 - Use walkdir or ignore crate to recursively list files.

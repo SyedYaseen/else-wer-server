@@ -5,7 +5,9 @@ import { setRate } from '../../player/engine';
 import { SpeedIcon } from './icons';
 import './player.css';
 
-const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const SPEEDS = [...new Set([0.25, 0.75, ...Array.from({ length: 28 }, (_, i) => (i + 3) / 10)])].sort(
+  (a, b) => a - b,
+);
 
 export function PlaybackSpeedMenu() {
   const [open, setOpen] = useState(false);

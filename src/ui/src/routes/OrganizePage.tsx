@@ -4,10 +4,12 @@ import { Button } from '../components/ui/Button';
 import { ActionMenu } from '../components/ui/ActionMenu';
 import { AuthorRow } from '../components/organize/AuthorRow';
 import { PickBookSheet, type PickResult } from '../components/organize/PickBookSheet';
+import { PickAuthorSheet } from '../components/organize/PickAuthorSheet';
 import { RenameSheet } from '../components/organize/RenameSheet';
 import { MatchSheet } from '../components/organize/MatchSheet';
+import { ConfirmActionSheet } from '../components/organize/ConfirmActionSheet';
 import { OrganizeHelpSheet } from '../components/organize/OrganizeHelpSheet';
-import { MoveIcon, LayersIcon, SearchIcon, ChevronRightIcon } from '../components/organize/icons';
+import { MoveIcon, LayersIcon, MergeIcon, SearchIcon, ChevronRightIcon } from '../components/organize/icons';
 import { RefreshIcon } from '../components/ui/icons';
 import { SetSeriesSheet, type SetSeriesBook } from '../components/library/SetSeriesSheet';
 import {
@@ -19,6 +21,7 @@ import {
 import { useLibraryBooks } from '../hooks/useLibraryBooks';
 import { buildTree } from '../types/scan';
 import type { BookGroup, FileInfo, ChangeDto } from '../types/scan';
+import { describeChanges } from '../lib/describeChanges';
 import '../components/organize/organize.css';
 
 type SheetState =
@@ -27,8 +30,14 @@ type SheetState =
   | { kind: 'rename-file'; file: FileInfo }
   | { kind: 'move-selected' }
   | { kind: 'merge-book'; book: BookGroup }
+  | { kind: 'move-book'; book: BookGroup }
+  | { kind: 'move-author'; author: string }
+  | { kind: 'merge-author'; author: string }
   | { kind: 'match-book'; bookId: number }
   | { kind: 'set-series' }
+  | { kind: 'move-selected-books' }
+  | { kind: 'merge-selected-books' }
+  | { kind: 'move-selected-authors' }
   | null;
 
 export function OrganizePage() {
@@ -40,7 +49,9 @@ export function OrganizePage() {
   const [scanning, setScanning] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
   const [selectedBookIds, setSelectedBookIds] = useState<Set<number>>(new Set());
+  const [selectedAuthorIds, setSelectedAuthorIds] = useState<Set<string>>(new Set());
   const [sheet, setSheet] = useState<SheetState>(null);
+  const [pendingChanges, setPendingChanges] = useState<ChangeDto[] | null>(null);
 
   const tree = useMemo(() => (data ? buildTree(data) : []), [data]);
 
@@ -62,21 +73,48 @@ export function OrganizePage() {
     });
   }
 
+  function toggleSelectAuthor(author: string) {
+    setSelectedAuthorIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(author)) next.delete(author);
+      else next.add(author);
+      return next;
+    });
+  }
+
+  const treeBooksById = useMemo(
+    () => new Map(tree.flatMap((a) => a.books).map((b) => [b.bookId, b])),
+    [tree],
+  );
+
+  function fileIdsForBooks(bookIds: Set<number>): number[] {
+    return Array.from(bookIds).flatMap((id) => treeBooksById.get(id)?.files.map((f) => f.id) ?? []);
+  }
+
   // Sequence prefill comes from the library row when available; tree books that
   // haven't landed in the library cache yet fall back to title-only entries.
   const seriesSheetBooks: SetSeriesBook[] = useMemo(() => {
-    const treeBooks = new Map(tree.flatMap((a) => a.books).map((b) => [b.bookId, b]));
     return Array.from(selectedBookIds).flatMap((bookId) => {
       const row = libraryBooks.find((b) => b.id === bookId);
       if (row) return [{ id: row.id, title: row.title, sequence: row.series_sequence }];
-      const treeBook = treeBooks.get(bookId);
+      const treeBook = treeBooksById.get(bookId);
       return treeBook ? [{ id: bookId, title: treeBook.title, sequence: null }] : [];
     });
-  }, [selectedBookIds, libraryBooks, tree]);
+  }, [selectedBookIds, libraryBooks, treeBooksById]);
 
+  // Stages changes for review instead of applying them immediately - the
+  // confirm sheet shows a dry-run of every change before it hits the server.
   function submitChanges(changes: ChangeDto[]) {
-    applyChanges.mutate(changes);
+    setPendingChanges(changes);
+  }
+
+  function confirmPendingChanges() {
+    if (!pendingChanges) return;
+    applyChanges.mutate(pendingChanges);
     setSelectedFileIds(new Set());
+    setSelectedBookIds(new Set());
+    setSelectedAuthorIds(new Set());
+    setPendingChanges(null);
   }
 
   async function handleRescan() {
@@ -119,17 +157,119 @@ export function OrganizePage() {
           },
         ]);
       }
-    } else if (sheet.kind === 'merge-book' && target.kind === 'existing') {
-      submitChanges([
-        {
-          change_type: 'merge-title',
-          file_ids: sheet.book.files.map((f) => f.id),
-          current_book_ids: [sheet.book.bookId],
-          new_book_id: target.bookId,
-        },
-      ]);
+    } else if (sheet.kind === 'merge-book') {
+      if (target.kind === 'existing') {
+        submitChanges([
+          {
+            change_type: 'merge-title',
+            file_ids: sheet.book.files.map((f) => f.id),
+            current_book_ids: [sheet.book.bookId],
+            new_book_id: target.bookId,
+          },
+        ]);
+      } else {
+        submitChanges([
+          {
+            change_type: 'merge-title',
+            file_ids: sheet.book.files.map((f) => f.id),
+            current_book_ids: [sheet.book.bookId],
+            new_book_id: -1,
+            new_author: target.author,
+            new_series: target.title,
+          },
+        ]);
+      }
+    } else if (sheet.kind === 'merge-selected-books') {
+      const file_ids = fileIdsForBooks(selectedBookIds);
+      const current_book_ids = Array.from(selectedBookIds);
+      if (target.kind === 'existing') {
+        submitChanges([
+          { change_type: 'merge-title', file_ids, current_book_ids, new_book_id: target.bookId },
+        ]);
+      } else {
+        submitChanges([
+          {
+            change_type: 'merge-title',
+            file_ids,
+            current_book_ids,
+            new_book_id: -1,
+            new_author: target.author,
+            new_series: target.title,
+          },
+        ]);
+      }
     }
   }
+
+  function handlePickAuthor(target: string) {
+    if (sheet?.kind === 'move-author' || sheet?.kind === 'merge-author') {
+      submitChanges([
+        { change_type: 'rename', file_ids: fileIdsForAuthor(sheet.author), new_author: target },
+      ]);
+    } else if (sheet?.kind === 'move-book') {
+      submitChanges([
+        {
+          change_type: 'rename',
+          file_ids: sheet.book.files.map((f) => f.id),
+          new_author: target,
+        },
+      ]);
+    } else if (sheet?.kind === 'move-selected-books') {
+      submitChanges([
+        { change_type: 'rename', file_ids: fileIdsForBooks(selectedBookIds), new_author: target },
+      ]);
+    } else if (sheet?.kind === 'move-selected-authors') {
+      const file_ids = Array.from(selectedAuthorIds).flatMap(fileIdsForAuthor);
+      submitChanges([{ change_type: 'rename', file_ids, new_author: target }]);
+    }
+  }
+
+  // Derives the PickAuthorSheet's title/excludeAuthor for whichever sheet.kind
+  // currently wants an author picker; null hides the sheet.
+  function authorPickConfig(s: SheetState): { title: string; excludeAuthor?: string } | null {
+    if (!s) return null;
+    switch (s.kind) {
+      case 'move-author':
+        return { title: 'Move to another author…', excludeAuthor: s.author };
+      case 'merge-author':
+        return { title: 'Merge into another author…', excludeAuthor: s.author };
+      case 'move-book':
+        return { title: 'Move to another author…', excludeAuthor: s.book.author };
+      case 'move-selected-books':
+        return {
+          title: `Move ${selectedBookIds.size} book${selectedBookIds.size === 1 ? '' : 's'} to another author…`,
+        };
+      case 'move-selected-authors':
+        return {
+          title: `Move ${selectedAuthorIds.size} author${selectedAuthorIds.size === 1 ? '' : 's'}' files to…`,
+        };
+      default:
+        return null;
+    }
+  }
+
+  // Same idea for the PickBookSheet's title/excludeBookId.
+  function bookPickConfig(s: SheetState): { title: string; excludeBookId?: number | number[] } | null {
+    if (!s) return null;
+    switch (s.kind) {
+      case 'move-selected':
+        return {
+          title: `Move ${selectedFileIds.size} file${selectedFileIds.size === 1 ? '' : 's'} to…`,
+        };
+      case 'merge-book':
+        return { title: 'Merge into…', excludeBookId: s.book.bookId };
+      case 'merge-selected-books':
+        return {
+          title: `Merge ${selectedBookIds.size} book${selectedBookIds.size === 1 ? '' : 's'} into…`,
+          excludeBookId: Array.from(selectedBookIds),
+        };
+      default:
+        return null;
+    }
+  }
+
+  const authorPick = authorPickConfig(sheet);
+  const bookPick = bookPickConfig(sheet);
 
   return (
     <div className="organize-page">
@@ -187,25 +327,33 @@ export function OrganizePage() {
             group={group}
             selectedFileIds={selectedFileIds}
             selectedBookIds={selectedBookIds}
+            selectedAuthorIds={selectedAuthorIds}
             onToggleSelect={toggleSelect}
             onToggleSelectBook={toggleSelectBook}
+            onToggleSelectAuthor={toggleSelectAuthor}
             onRenameAuthor={(author) => setSheet({ kind: 'rename-author', author })}
+            onMoveAuthor={(author) => setSheet({ kind: 'move-author', author })}
+            onMergeAuthor={(author) => setSheet({ kind: 'merge-author', author })}
             onRenameBook={(book) => setSheet({ kind: 'rename-book', book })}
             onRenameFile={(file) => setSheet({ kind: 'rename-file', file })}
+            onMoveBook={(book) => setSheet({ kind: 'move-book', book })}
             onMergeBook={(book) => setSheet({ kind: 'merge-book', book })}
             onMatchBook={(book) => setSheet({ kind: 'match-book', bookId: book.bookId })}
           />
         ))}
       </div>
 
-      {(selectedFileIds.size > 0 || selectedBookIds.size > 0) && (
+      {(selectedFileIds.size > 0 || selectedBookIds.size > 0 || selectedAuthorIds.size > 0) && (
         <div className="organize-toolbar">
           <span>
             {selectedFileIds.size > 0 &&
               `${selectedFileIds.size} file${selectedFileIds.size === 1 ? '' : 's'}`}
-            {selectedFileIds.size > 0 && selectedBookIds.size > 0 && ', '}
+            {selectedFileIds.size > 0 && (selectedBookIds.size > 0 || selectedAuthorIds.size > 0) && ', '}
             {selectedBookIds.size > 0 &&
               `${selectedBookIds.size} book${selectedBookIds.size === 1 ? '' : 's'}`}
+            {selectedBookIds.size > 0 && selectedAuthorIds.size > 0 && ', '}
+            {selectedAuthorIds.size > 0 &&
+              `${selectedAuthorIds.size} author${selectedAuthorIds.size === 1 ? '' : 's'}`}
             {' selected'}
           </span>
           <div className="organize-toolbar-actions">
@@ -214,13 +362,24 @@ export function OrganizePage() {
               onClick={() => {
                 setSelectedFileIds(new Set());
                 setSelectedBookIds(new Set());
+                setSelectedAuthorIds(new Set());
               }}
             >
               Clear
             </Button>
             {selectedFileIds.size > 0 && (
               <Button variant="primary" onClick={() => setSheet({ kind: 'move-selected' })}>
-                <MoveIcon size={14} /> Move
+                <MoveIcon size={14} /> Move files
+              </Button>
+            )}
+            {selectedBookIds.size > 0 && (
+              <Button variant="primary" onClick={() => setSheet({ kind: 'move-selected-books' })}>
+                <MoveIcon size={14} /> Move to author
+              </Button>
+            )}
+            {selectedBookIds.size > 0 && (
+              <Button variant="primary" onClick={() => setSheet({ kind: 'merge-selected-books' })}>
+                <MergeIcon size={14} /> Merge
               </Button>
             )}
             {selectedBookIds.size > 0 && (
@@ -228,32 +387,39 @@ export function OrganizePage() {
                 <LayersIcon size={14} /> Set series
               </Button>
             )}
+            {selectedAuthorIds.size > 0 && (
+              <Button variant="primary" onClick={() => setSheet({ kind: 'move-selected-authors' })}>
+                <MoveIcon size={14} /> Move authors
+              </Button>
+            )}
           </div>
         </div>
       )}
 
       <PickBookSheet
-        open={sheet?.kind === 'move-selected'}
+        open={bookPick !== null}
         onClose={() => setSheet(null)}
-        title={`Move ${selectedFileIds.size} file${selectedFileIds.size === 1 ? '' : 's'} to…`}
+        title={bookPick?.title ?? ''}
         tree={tree}
+        excludeBookId={bookPick?.excludeBookId}
         allowCreateNew
         onPick={handlePick}
       />
 
-      <PickBookSheet
-        open={sheet?.kind === 'merge-book'}
+      <PickAuthorSheet
+        open={authorPick !== null}
         onClose={() => setSheet(null)}
-        title="Merge into…"
+        title={authorPick?.title ?? ''}
         tree={tree}
-        excludeBookId={sheet?.kind === 'merge-book' ? sheet.book.bookId : undefined}
-        onPick={handlePick}
+        excludeAuthor={authorPick?.excludeAuthor}
+        onPick={handlePickAuthor}
       />
 
       <RenameSheet
         open={sheet?.kind === 'rename-author'}
         onClose={() => setSheet(null)}
         scope="author"
+        tree={tree}
         initialAuthor={sheet?.kind === 'rename-author' ? sheet.author : undefined}
         onSubmit={(values) => {
           if (sheet?.kind !== 'rename-author' || !values.author) return;
@@ -267,6 +433,7 @@ export function OrganizePage() {
         open={sheet?.kind === 'rename-book'}
         onClose={() => setSheet(null)}
         scope="book"
+        tree={tree}
         initialAuthor={sheet?.kind === 'rename-book' ? sheet.book.author : undefined}
         initialTitle={sheet?.kind === 'rename-book' ? sheet.book.title : undefined}
         onSubmit={(values) => {
@@ -286,6 +453,7 @@ export function OrganizePage() {
         open={sheet?.kind === 'rename-file'}
         onClose={() => setSheet(null)}
         scope="file"
+        tree={tree}
         initialTitle={sheet?.kind === 'rename-file' ? sheet.file.file_name : undefined}
         onSubmit={(values) => {
           if (sheet?.kind !== 'rename-file' || !values.title) return;
@@ -293,6 +461,13 @@ export function OrganizePage() {
             { change_type: 'rename', file_ids: [sheet.file.id], new_filetitle: values.title },
           ]);
         }}
+      />
+
+      <ConfirmActionSheet
+        open={pendingChanges !== null}
+        lines={pendingChanges ? describeChanges(pendingChanges, tree) : []}
+        onCancel={() => setPendingChanges(null)}
+        onConfirm={confirmPendingChanges}
       />
 
       <MatchSheet

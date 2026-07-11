@@ -1,4 +1,5 @@
 import { useAuthStore } from '../store/auth';
+import { useNetworkStatusStore } from '../store/networkStatus';
 
 const BASE_URL = '/api';
 
@@ -32,6 +33,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (err) {
+    // fetch() itself threw: no response reached us at all (offline, DNS
+    // failure, or our own timeout abort) — as opposed to the server
+    // responding with a 4xx/5xx, which throws ApiError below instead and is
+    // not a reachability signal. healthPoll.ts still owns periodic
+    // recovery/its own failure-threshold debounce; this just informs the
+    // shared store immediately on a real request failure.
+    if (useNetworkStatusStore.getState().reachable) {
+      useNetworkStatusStore.getState().setReachable(false);
+    }
+    throw err;
   } finally {
     clearTimeout(timeoutId);
   }

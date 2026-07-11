@@ -9,10 +9,15 @@ import { BookDetailPage } from './routes/BookDetailPage';
 import { PlayerPage } from './routes/PlayerPage';
 import { OrganizePage } from './routes/OrganizePage';
 import { UserManagementPage } from './routes/UserManagementPage';
+import { SettingsPage } from './routes/SettingsPage';
 import { PlayerRoot } from './components/player/PlayerRoot';
 import { InstallBanner } from './components/ui/InstallBanner';
+import { NetworkBanner } from './components/ui/NetworkBanner';
+import { Toaster } from './components/ui/Toaster';
+import { startHealthPolling } from './lib/healthPoll';
 
 const queryClient = new QueryClient();
+startHealthPolling();
 
 export default function App() {
   return (
@@ -24,6 +29,7 @@ export default function App() {
             <Route path="/" element={<LibraryPage />} />
             <Route path="/book/:id" element={<BookDetailPage />} />
             <Route path="/player/:id" element={<PlayerPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route element={<RequireOrganize />}>
               <Route path="/organize" element={<OrganizePage />} />
             </Route>
@@ -34,6 +40,8 @@ export default function App() {
         </Routes>
         <PlayerRoot />
         <InstallBanner />
+        <NetworkBanner />
+        <Toaster />
       </BrowserRouter>
     </QueryClientProvider>
   );

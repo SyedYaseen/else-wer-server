@@ -268,6 +268,8 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--space-sm);
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .speed-option {
@@ -288,6 +290,16 @@
 }
 
 /* ── Chapters sheet ───────────────────────────────────────────────────── */
+
+.chapters-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chapters-sheet-header .sheet-title {
+  margin-bottom: 0;
+}
 
 .chapters-list {
   display: flex;

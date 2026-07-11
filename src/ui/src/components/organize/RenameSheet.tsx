@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
+import { SearchableCombobox } from './SearchableCombobox';
+import type { AuthorGroup } from '../../types/scan';
 
 export type RenameScope = 'author' | 'book' | 'file';
 
@@ -8,12 +10,21 @@ interface RenameSheetProps {
   open: boolean;
   onClose: () => void;
   scope: RenameScope;
+  tree?: AuthorGroup[];
   initialAuthor?: string;
   initialTitle?: string;
   onSubmit: (values: { author?: string; title?: string }) => void;
 }
 
-export function RenameSheet({ open, onClose, scope, initialAuthor, initialTitle, onSubmit }: RenameSheetProps) {
+export function RenameSheet({
+  open,
+  onClose,
+  scope,
+  tree = [],
+  initialAuthor,
+  initialTitle,
+  onSubmit,
+}: RenameSheetProps) {
   const [author, setAuthor] = useState(initialAuthor ?? '');
   const [title, setTitle] = useState(initialTitle ?? '');
 
@@ -50,7 +61,15 @@ export function RenameSheet({ open, onClose, scope, initialAuthor, initialTitle,
         {showAuthor && (
           <label className="organize-field">
             <span>Author</span>
-            <input className="organize-input" value={author} onChange={(e) => setAuthor(e.target.value)} autoFocus />
+            <SearchableCombobox
+              items={tree.map((a) => a.author)}
+              getLabel={(a) => a}
+              value={author}
+              placeholder="Author"
+              onSelectExisting={(a) => setAuthor(a)}
+              onCreateNew={(text) => setAuthor(text)}
+              onQueryChange={(text) => setAuthor(text)}
+            />
           </label>
         )}
         {showTitle && (

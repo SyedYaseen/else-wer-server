@@ -27,6 +27,13 @@ export async function fileMetadata(bookId: number): Promise<FileMetadata[]> {
   return data.data;
 }
 
+export async function reorderFiles(bookId: number, fileIds: number[]): Promise<FileMetadata[]> {
+  const data = await api.post<FileMetadataResponse>(`/file_metadata/${bookId}/reorder`, {
+    file_ids: fileIds,
+  });
+  return data.data;
+}
+
 export async function rescanFiles(): Promise<void> {
   await api.get('/scan_files');
 }

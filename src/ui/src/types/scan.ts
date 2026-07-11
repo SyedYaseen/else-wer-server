@@ -74,26 +74,37 @@ export interface AuthorGroup {
   books: BookGroup[];
 }
 
+// Groups by a case-folded key so differently-cased scans of the same real
+// author (e.g. "brandon sanderson" vs "Brandon Sanderson") collapse into one
+// row here, regardless of what's actually stored per-book in the DB.
 export function buildTree(grouped: GroupedFiles): AuthorGroup[] {
-  const authors: AuthorGroup[] = [];
+  const byKey = new Map<string, AuthorGroup>();
 
   for (const [author, seriesMap] of Object.entries(grouped)) {
-    const booksByBookId = new Map<number, BookGroup>();
+    const key = author.trim().toLowerCase();
+    let authorGroup = byKey.get(key);
+    if (!authorGroup) {
+      authorGroup = { author, books: [] };
+      byKey.set(key, authorGroup);
+    }
+    const booksByBookId = new Map<number, BookGroup>(authorGroup.books.map((b) => [b.bookId, b]));
 
     for (const [series, files] of Object.entries(seriesMap)) {
       for (const file of files) {
         let group = booksByBookId.get(file.book_id);
         if (!group) {
-          group = { bookId: file.book_id, author, series, title: file.title, files: [] };
+          group = { bookId: file.book_id, author: authorGroup.author, series, title: file.title, files: [] };
           booksByBookId.set(file.book_id, group);
+          authorGroup.books.push(group);
         }
         group.files.push(file);
       }
     }
-
-    const books = Array.from(booksByBookId.values()).sort((a, b) => a.title.localeCompare(b.title));
-    authors.push({ author, books });
   }
 
-  return authors.sort((a, b) => a.author.localeCompare(b.author));
+  for (const authorGroup of byKey.values()) {
+    authorGroup.books.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  return Array.from(byKey.values()).sort((a, b) => a.author.localeCompare(b.author));
 }

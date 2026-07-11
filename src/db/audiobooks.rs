@@ -2,7 +2,7 @@ use crate::{
     api::api_error::ApiError,
     models::audiobooks::{AudioBookRow, CreateFileMetadata, FileMetadata},
 };
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, QueryBuilder, Sqlite};
 
 pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiError> {
     let books = sqlx::query_as::<_, AudioBookRow>(
@@ -130,6 +130,53 @@ pub async fn get_files_by_book_id(
         .collect::<Result<Vec<_>, ApiError>>()?;
 
     Ok(files)
+}
+
+// Manual chapter-order fix: flattens disc_number to 0 and assigns sequential
+// track_number per file_ids' position. Safe against rescans since new-file
+// scanning is INSERT OR IGNORE and no other code path updates these columns
+// on existing rows.
+pub async fn reorder_files(
+    db: &Pool<Sqlite>,
+    book_id: i64,
+    file_ids: &[i64],
+) -> Result<(), ApiError> {
+    let existing: Vec<i64> = sqlx::query_scalar!("SELECT id FROM files WHERE book_id = ?", book_id)
+        .fetch_all(db)
+        .await?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let mut existing_sorted = existing.clone();
+    existing_sorted.sort_unstable();
+    let mut given_sorted = file_ids.to_vec();
+    given_sorted.sort_unstable();
+    if existing_sorted != given_sorted {
+        return Err(ApiError::BadRequest(
+            "file_ids must match the book's existing files exactly".into(),
+        ));
+    }
+
+    let mut qb: QueryBuilder<'_, Sqlite> =
+        QueryBuilder::new("UPDATE files SET disc_number = 0, track_number = CASE id");
+    for (idx, file_id) in file_ids.iter().enumerate() {
+        let track_number = (idx + 1) as i64;
+        qb.push(" WHEN ")
+            .push_bind(*file_id)
+            .push(" THEN ")
+            .push_bind(track_number);
+    }
+    qb.push(" END WHERE book_id = ").push_bind(book_id);
+    qb.push(" AND id IN (");
+    let mut separated = qb.separated(", ");
+    for file_id in file_ids {
+        separated.push_bind(*file_id);
+    }
+    qb.push(")");
+    qb.build().execute(db).await?;
+
+    Ok(())
 }
 
 // Cascades to `files` and `progress` rows (ON DELETE CASCADE); does not touch

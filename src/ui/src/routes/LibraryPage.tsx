@@ -15,7 +15,7 @@ import { useBookSearch } from '../hooks/useBookSearch';
 import { useInstallPrompt } from '../pwa/useInstallPrompt';
 import { buildContinueListening } from '../lib/continueListening';
 import { groupByAuthor, groupBySeries } from '../lib/groupBooks';
-import { RefreshIcon, ChecklistIcon, DownloadIcon, LogoutIcon } from '../components/ui/icons';
+import { RefreshIcon, ChecklistIcon, DownloadIcon, SettingsIcon } from '../components/ui/icons';
 import '../components/library/library.css';
 
 const LIBRARY_TABS = [
@@ -26,8 +26,6 @@ const LIBRARY_TABS = [
 
 export function LibraryPage() {
   const username = useAuthStore((s) => s.claims?.username);
-  const logout = useAuthStore((s) => s.logout);
-  const isAdmin = useAuthStore((s) => s.isAdmin());
   const canOrganize = useAuthStore((s) => s.canOrganize());
   const navigate = useNavigate();
   const [scanning, setScanning] = useState(false);
@@ -121,11 +119,7 @@ export function LibraryPage() {
                 icon: <DownloadIcon size={16} />,
                 onClick: handleInstallClick,
               },
-              isAdmin && {
-                label: 'Manage users',
-                onClick: () => navigate('/admin/users'),
-              },
-              { label: 'Log out', icon: <LogoutIcon size={16} />, onClick: logout },
+              { label: 'Settings', icon: <SettingsIcon size={16} />, onClick: () => navigate('/settings') },
             ]}
           />
         </div>

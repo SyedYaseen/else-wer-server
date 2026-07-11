@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { downloadBook } from './storage';
+import { showToast } from '../lib/toast';
 import type { AudioBookRow, FileMetadata } from '../types/book';
 
 export type DownloadEntry =
@@ -35,7 +36,10 @@ export async function startDownload(book: AudioBookRow, files: FileMetadata[]): 
       }
     });
     setEntry(book.id, { status: 'done' });
+    showToast(`"${book.title}" downloaded`, 'success');
   } catch (e) {
-    setEntry(book.id, { status: 'error', message: e instanceof Error ? e.message : 'Download failed' });
+    const message = e instanceof Error ? e.message : 'Download failed';
+    setEntry(book.id, { status: 'error', message });
+    showToast(`Download failed: ${message}`, 'error');
   }
 }

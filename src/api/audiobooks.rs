@@ -3,6 +3,7 @@ use crate::api::match_meta::try_spawn_metadata_backfill;
 use crate::api::middleware::{AdminUser, OrganizeUser};
 use crate::db::audiobooks::{
     delete_book, get_book, get_file_path_by_id, get_files_by_book_id, list_all_books,
+    reorder_files,
 };
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
@@ -425,6 +426,27 @@ pub async fn file_metadata_handler(
     AuthUser(_claims): AuthUser,
     Path(book_id): Path<i64>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let files = file_metadata(&state.db_pool, book_id).await?;
+
+    Ok(Json(json!({
+        "message": "",
+        "count": files.len(),
+        "data": files,
+    })))
+}
+
+#[derive(serde::Deserialize)]
+pub struct ReorderFilesRequest {
+    file_ids: Vec<i64>,
+}
+
+pub async fn reorder_files_handler(
+    State(state): State<AppState>,
+    OrganizeUser(_claims): OrganizeUser,
+    Path(book_id): Path<i64>,
+    Json(body): Json<ReorderFilesRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    reorder_files(&state.db_pool, book_id, &body.file_ids).await?;
     let files = file_metadata(&state.db_pool, book_id).await?;
 
     Ok(Json(json!({

@@ -451,6 +451,56 @@ fn bind_ids<'a>(
     qb
 }
 
+/// Resolves `new_book_id` to a destination book id, creating a new `audiobooks`
+/// row when it's negative (the UI's convention for "create a new book").
+/// Shared by `FileMove` and `MergeTitle` so both go through one create-book path.
+async fn resolve_or_create_dest_book(
+    pool: &SqlitePool,
+    new_book_id: i64,
+    new_author: &Option<String>,
+    new_series: &Option<String>,
+    file_ids: &[i64],
+) -> Result<i64, ApiError> {
+    if new_book_id >= 0 {
+        return Ok(new_book_id);
+    }
+
+    let dest_author = new_author.clone().unwrap_or_default();
+    let dest_series = new_series.clone().unwrap_or_default();
+
+    // files_location for the new book = parent dir of one of the moved
+    // files' current path (cover art is left to cover_links).
+    let file_path: Option<String> = match file_ids.first() {
+        Some(id) => sqlx::query_scalar("SELECT file_path FROM files WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+        None => None,
+    };
+    let files_location = file_path
+        .as_deref()
+        .and_then(|p| std::path::Path::new(p).parent())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO audiobooks (author, series, title, files_location, user_locked, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT(files_location, title) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+        "#,
+    )
+    .bind(&dest_author)
+    .bind(&dest_series)
+    .bind(&dest_series)
+    .bind(&files_location)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(id)
+}
+
 /// Save org-UI edits. `change.file_ids` are `files.id` values (the single file-id
 /// space; no more fsc echo). See ChangeType docs for what each variant does.
 pub async fn save_user_file_org_changes(
@@ -484,41 +534,14 @@ pub async fn save_user_file_org_changes(
                     continue;
                 }
 
-                let dest_author = change.new_author.clone().unwrap();
-                let dest_series = change.new_series.clone().unwrap();
-                let mut dest_book_id = change.new_book_id.unwrap();
-
-                // negative book_ids from UI indicate new book create
-                if dest_book_id < 0 {
-                    // files_location for the new book = parent dir of one of the
-                    // moved files' current path (cover art is left to cover_links).
-                    let file_path: Option<String> = match change.file_ids.first() {
-                        Some(id) => sqlx::query_scalar("SELECT file_path FROM files WHERE id = ?")
-                            .bind(id)
-                            .fetch_optional(pool)
-                            .await?,
-                        None => None,
-                    };
-                    let files_location = file_path
-                        .as_deref()
-                        .and_then(|p| std::path::Path::new(p).parent())
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default();
-
-                    let insert = sqlx::query(
-                        r#"
-                        INSERT OR IGNORE INTO audiobooks (author, series, title, files_location, user_locked, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                        "#,
-                    )
-                    .bind(&dest_author)
-                    .bind(&dest_series)
-                    .bind(&dest_series)
-                    .bind(&files_location)
-                    .execute(pool)
-                    .await?;
-                    dest_book_id = insert.last_insert_rowid();
-                }
+                let dest_book_id = resolve_or_create_dest_book(
+                    pool,
+                    change.new_book_id.unwrap(),
+                    &change.new_author,
+                    &change.new_series,
+                    &change.file_ids,
+                )
+                .await?;
 
                 files_qb.push("book_id=").push_bind(dest_book_id);
                 files_qb = bind_ids(files_qb, "id", &change.file_ids);
@@ -537,7 +560,26 @@ pub async fn save_user_file_org_changes(
                     .await?;
             }
             ChangeType::MergeTitle => {
-                if let Some(dest_book_id) = change.new_book_id {
+                if let Some(requested_book_id) = change.new_book_id {
+                    if requested_book_id < 0
+                        && (change.new_author.is_none() || change.new_series.is_none())
+                    {
+                        tracing::warn!(
+                            "Skipping invalid MergeTitle change (missing author/series for new book): {:?}",
+                            change.file_ids
+                        );
+                        continue;
+                    }
+
+                    let dest_book_id = resolve_or_create_dest_book(
+                        pool,
+                        requested_book_id,
+                        &change.new_author,
+                        &change.new_series,
+                        &change.file_ids,
+                    )
+                    .await?;
+
                     files_qb.push("book_id=").push_bind(dest_book_id);
                     files_qb = bind_ids(files_qb, "id", &change.file_ids);
                     files_qb.build().execute(pool).await?;

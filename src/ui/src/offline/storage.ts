@@ -35,7 +35,7 @@ interface StoredSegment {
 
 // Snapshot of a downloaded book's metadata, so BookDetailPage/PlayerPage can
 // render and start playback without a network round-trip when offline.
-interface StoredBook {
+export interface StoredBook {
   bookId: number;
   book: AudioBookRow;
   files: FileMetadata[];
@@ -207,4 +207,22 @@ export async function getOfflineFileBlob(fileId: number): Promise<Blob | null> {
 export async function deleteBookDownload(bookId: number): Promise<void> {
   await deleteFilesByBook(bookId);
   await withBooksStore('readwrite', (store) => store.delete(bookId));
+}
+
+export async function listDownloadedBooks(): Promise<StoredBook[]> {
+  return withBooksStore<StoredBook[]>('readonly', (store) => store.getAll());
+}
+
+export async function clearAllDownloads(): Promise<void> {
+  const db = await openDb();
+  await Promise.all(
+    [STORE, BOOKS_STORE, SEGMENT_STORE].map(
+      (name) =>
+        new Promise<void>((resolve, reject) => {
+          const req = db.transaction(name, 'readwrite').objectStore(name).clear();
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }),
+    ),
+  );
 }
