@@ -1,0 +1,15 @@
+services:
+  else-wer:
+    build: .
+    image: else-wer:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    volumes:
+      - else-wer-data:/data
+      - ./audiobooks:/audiobooks
+
+volumes:
+  else-wer-data:

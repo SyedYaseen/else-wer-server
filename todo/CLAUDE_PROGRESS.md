@@ -1,4 +1,18 @@
 ## User todo/ feature/ bug fix pipeline
+- [x] Docker packaging for else-wer-server (2026-07-11): Dockerfile (3-stage: node pwa-build, rust-build w/ sqlx-cli
+  used only to `sqlx migrate run` a throwaway build.db to satisfy `sqlx::query!` macro type-checking at compile time,
+  debian:bookworm-slim runtime), .dockerignore, docker-compose.yml (named volume `else-wer-data` -> /data for
+  db+creds+covers, ./audiobooks -> /audiobooks bind mount, port 3000), .env.docker.example (JWT_SECRET required, rest
+  defaulted in image). Migrations are embedded in the binary via `sqlx::migrate!()` (src/db/mod.rs:24) so runtime image
+  doesn't need migrations/ copied in. covers/ symlinked to /data/covers since code does `current_dir().join("covers")`
+  (src/file_ops/book_cover.rs:43). Verified live: `docker compose up --build` -> migrations ran, admin/admin created,
+  GET / returned PWA (200), POST /api/login returned valid JWT (202). Not committed (user reviews first). Plan:
+  /home/loop/.claude/plans/this-is-a-audiobookshelf-twinkling-summit.md
+  REMAINING (next session, marketing/docs site): Astro+Starlight else-wer-site scaffold at
+  /home/loop/p/else-wer/else-wer-site (theme tokens/fonts/logo ported from src/ui/src/styles/tokens.css +
+  public/favicon.svg — full values captured in the plan file), marketing landing page, docs pages (quickstart, docker,
+  https-duckdns [port from deploy/https-duckdns/README.md], wireguard-remote-access [new content], ios-offline-limitations,
+  faq), AGPL-3.0 LICENSE + donate link, Cloudflare Pages deploy pointing else-wer.com.
 - [ ] PWA offline downloads + playback (2026-07-09, uncommitted): IndexedDB storage (src/ui/src/offline/storage.ts, DB v3 —
   audio stored as 8MB segments to avoid iOS Safari memory-crash reloads that looked like "download resets"; book/file
   metadata snapshot store for offline cold-start; legacy v2 whole-blob records still readable), module-level download

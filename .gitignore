@@ -5,6 +5,7 @@ rustybookshelf.db
 rustybookshelf.db-wal
 rustybookshelf.db-shm
 .env
+.env.docker
 plan.md
 covers
 backupdata
