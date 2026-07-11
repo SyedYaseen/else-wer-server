@@ -1,0 +1,2 @@
+ALTER TABLE users ADD COLUMN salt TEXT NOT NULL DEFAULT '';
+ALTER TABLE users DROP COLUMN token_version;
