@@ -2,13 +2,14 @@ use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
     response::{Html, IntoResponse},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use serde_json::json;
 use tower_http::services::ServeDir;
 pub mod api_error;
 mod audiobooks;
 mod auth_extractor;
+mod bookmarks;
 mod match_meta;
 mod middleware;
 pub mod rate_limit;
@@ -23,6 +24,7 @@ use crate::{
             list_scanned_files_handler, reorder_files_handler, save_organized_files_handler,
             stream_file, upload_handler,
         },
+        bookmarks::{create_bookmark_handler, delete_bookmark_handler, list_bookmarks_handler},
         match_meta::{apply_book_match, assign_series, backfill_metadata, match_book_candidates},
         stats::{get_daily_stats, get_finished_books},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
@@ -72,6 +74,13 @@ pub async fn routes() -> Router<AppState> {
         )
         .route("/get_book_progress/{book_id}", get(get_book_progress))
         .route("/update_progress", post(update_progress))
+        // Bookmarks
+        .route("/bookmarks", post(create_bookmark_handler))
+        .route("/bookmarks/book/{book_id}", get(list_bookmarks_handler))
+        .route(
+            "/bookmarks/{bookmark_id}",
+            delete(delete_bookmark_handler),
+        )
         // Stats
         .route("/stats/daily", get(get_daily_stats))
         .route("/stats/finished", get(get_finished_books))

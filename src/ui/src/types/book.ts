@@ -30,6 +30,17 @@ export interface Progress {
   updated_at: string;
 }
 
+// Mirrors src/models/bookmarks.rs::Bookmark (POST/GET /api/bookmarks)
+export interface Bookmark {
+  id: number;
+  user_id: number;
+  book_id: number;
+  file_id: number;
+  timestamp_ms: number;
+  note: string | null;
+  created_at: string;
+}
+
 // Mirrors src/models/audiobooks.rs::FileMetadata (GET /api/file_metadata/{book_id})
 export interface FileMetadata {
   id: number;

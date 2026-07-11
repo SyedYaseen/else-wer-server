@@ -11,6 +11,7 @@ import { Seeker } from '../components/player/Seeker';
 import { PlaybackSpeedMenu } from '../components/player/PlaybackSpeedMenu';
 import { SleepTimerSheet } from '../components/player/SleepTimerSheet';
 import { ChaptersSheet } from '../components/player/ChaptersSheet';
+import { BookmarksSheet } from '../components/player/BookmarksSheet';
 import { PlayIcon, PauseIcon, RewindIcon, ForwardIcon, ChevronDownIcon } from '../components/player/icons';
 import '../components/player/player.css';
 
@@ -132,6 +133,7 @@ export function PlayerPage() {
         <PlaybackSpeedMenu />
         <SleepTimerSheet />
         <ChaptersSheet />
+        <BookmarksSheet />
       </div>
     </div>
   );

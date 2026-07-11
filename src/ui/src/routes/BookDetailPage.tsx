@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fileMetadata, coverUrl } from '../api/books';
 import { getBookProgress } from '../api/progress';
+import { listBookmarks, deleteBookmark } from '../api/bookmarks';
+import type { Bookmark } from '../types/book';
 import { resolveResumePoint, reconcileProgress, getLocalProgress } from '../lib/playerResume';
 import type { AudioBookRow, FileMetadata } from '../types/book';
 import { loadBook } from '../player/engine';
@@ -30,7 +32,7 @@ import {
   ChevronRightIcon,
 } from '../components/organize/icons';
 import { PlayIcon } from '../components/player/icons';
-import { DownloadIcon } from '../components/ui/icons';
+import { DownloadIcon, TrashIcon } from '../components/ui/icons';
 import { SetSeriesSheet } from '../components/library/SetSeriesSheet';
 import '../components/library/BookDetailPage.css';
 import '../components/organize/organize.css';
@@ -50,6 +52,12 @@ export function BookDetailPage() {
   const deleteBook = useDeleteBook();
 
   const { data: books = [], isLoading: booksLoading } = useLibraryBooks();
+
+  const { data: bookmarks = [], refetch: refetchBookmarks } = useQuery({
+    queryKey: ['bookmarks', bookId],
+    queryFn: () => listBookmarks(bookId),
+    enabled: Number.isFinite(bookId),
+  });
 
   const { data: files_, isLoading, isError } = useQuery({
     queryKey: [...LIBRARY_KEYS.books, bookId, 'files'],
@@ -203,6 +211,19 @@ export function BookDetailPage() {
     navigate(`/player/${book.id}`);
   }
 
+  async function handleJumpToBookmark(b: Bookmark) {
+    if (!book) return;
+    const fileIndex = files.findIndex((f) => f.id === b.file_id);
+    if (fileIndex === -1) return;
+    loadBook(book, files, { index: fileIndex, startSec: b.timestamp_ms / 1000 });
+    navigate(`/player/${book.id}`);
+  }
+
+  async function handleDeleteBookmark(id: number) {
+    await deleteBookmark(id);
+    refetchBookmarks();
+  }
+
   if (!book) {
     // Don't flash "Book not found" while either source is still resolving.
     const pending = booksLoading || offlineData === undefined;
@@ -294,6 +315,30 @@ export function BookDetailPage() {
           </div>
         ))}
       </div>
+
+      {bookmarks.length > 0 && (
+        <>
+          <h2 className="book-detail-section-title">Bookmarks</h2>
+          <div className="file-list">
+            {bookmarks.map((b) => (
+              <div className="card file-list-item" key={b.id}>
+                <button className="bookmark-jump-btn" onClick={() => handleJumpToBookmark(b)}>
+                  <span className="file-list-name">{b.note || 'Bookmark'}</span>
+                </button>
+                <span className="file-list-duration">{formatDuration(b.timestamp_ms)}</span>
+                <button
+                  className="icon-btn"
+                  aria-label="Delete bookmark"
+                  title="Delete bookmark"
+                  onClick={() => handleDeleteBookmark(b.id)}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {selectedFileIds.size > 0 && (
         <div className="organize-toolbar">

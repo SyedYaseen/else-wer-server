@@ -70,6 +70,24 @@ export function ChaptersIcon({ size = 22, className }: IconProps) {
   );
 }
 
+export function BookmarkIcon({ size = 22, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M6 4h12v16l-6-4-6 4V4z" />
+    </svg>
+  );
+}
+
 export function SleepIcon({ size = 22, className }: IconProps) {
   return (
     <svg
