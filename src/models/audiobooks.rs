@@ -45,3 +45,8 @@ pub struct FileMetadata {
 }
 
 pub type CreateFileMetadata = BaseFileMetadata;
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteBookDto {
+    pub book_id: i64,
+}

@@ -51,6 +51,7 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<(), ApiError> {
             username: "admin".to_string(),
             password: "admin".to_string(),
             is_admin: true,
+            can_organize: true,
         };
         save_pwd_hash(&admin, db).await?;
 

@@ -132,6 +132,18 @@ pub async fn get_files_by_book_id(
     Ok(files)
 }
 
+// Cascades to `files` and `progress` rows (ON DELETE CASCADE); does not touch
+// disk — callers must remove the on-disk files first, since files_location can
+// be shared by sibling books.
+pub async fn delete_book(db: &Pool<Sqlite>, book_id: i64) -> Result<(), ApiError> {
+    sqlx::query("DELETE FROM audiobooks WHERE id = ?")
+        .bind(book_id)
+        .execute(db)
+        .await?;
+
+    Ok(())
+}
+
 pub async fn get_file_path_by_id(db: &Pool<Sqlite>, id: i64) -> Result<String, ApiError> {
     let path: (String,) = sqlx::query_as(
         r#"

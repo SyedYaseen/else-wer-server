@@ -122,3 +122,14 @@
   color: var(--color-ink-subtle);
   flex-shrink: 0;
 }
+
+.book-detail-delete-confirm-text {
+  color: var(--color-ink-muted);
+  font-size: var(--text-md);
+}
+
+.book-detail-delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}

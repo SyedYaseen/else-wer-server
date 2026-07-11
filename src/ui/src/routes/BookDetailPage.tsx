@@ -6,14 +6,16 @@ import { getBookProgress } from '../api/progress';
 import { resolveResumePoint, reconcileProgress, getLocalProgress } from '../lib/playerResume';
 import type { AudioBookRow, FileMetadata } from '../types/book';
 import { loadBook } from '../player/engine';
-import { useLibraryBooks, LIBRARY_KEYS } from '../hooks/useLibraryBooks';
+import { useLibraryBooks, useDeleteBook, LIBRARY_KEYS } from '../hooks/useLibraryBooks';
 import { useScannedFiles, useApplyChanges } from '../hooks/useOrganize';
+import { useAuthStore } from '../store/auth';
 import { buildTree } from '../types/scan';
 import type { ChangeDto } from '../types/scan';
 import { formatDuration } from '../lib/format';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { ActionMenu } from '../components/ui/ActionMenu';
+import { BottomSheet } from '../components/ui/BottomSheet';
 import { isBookDownloaded, getOfflineBookData } from '../offline/storage';
 import { startDownload, useDownloadStore } from '../offline/downloadStore';
 import { MatchSheet } from '../components/organize/MatchSheet';
@@ -42,7 +44,10 @@ export function BookDetailPage() {
   const [downloaded, setDownloaded] = useState(false);
   const [matchOpen, setMatchOpen] = useState(false);
   const [sheet, setSheet] = useState<DetailSheet>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
+  const isAdmin = useAuthStore((s) => s.isAdmin());
+  const deleteBook = useDeleteBook();
 
   const { data: books = [], isLoading: booksLoading } = useLibraryBooks();
 
@@ -179,6 +184,12 @@ export function BookDetailPage() {
     void startDownload(book, files);
   }
 
+  async function handleDeleteBook() {
+    if (!book) return;
+    await deleteBook.mutateAsync(book.id);
+    navigate('/');
+  }
+
   async function handlePlay() {
     if (!book) return;
     let resume: ReturnType<typeof resolveResumePoint>;
@@ -246,6 +257,7 @@ export function BookDetailPage() {
                 { label: 'Move', icon: <MoveIcon size={16} />, onClick: () => setSheet('move') },
                 { label: 'Merge', icon: <MergeIcon size={16} />, onClick: () => setSheet('merge') },
                 { label: 'Set series', icon: <LayersIcon size={16} />, onClick: () => setSheet('series') },
+                isAdmin && { label: 'Delete book', onClick: () => setDeleteConfirmOpen(true) },
               ]}
             />
           </div>
@@ -350,6 +362,21 @@ export function BookDetailPage() {
         onClose={() => setSheet(null)}
         books={[{ id: book.id, title: book.title, sequence: book.series_sequence }]}
       />
+
+      <BottomSheet open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
+        <h3 className="sheet-title">Delete book</h3>
+        <p className="book-detail-delete-confirm-text">
+          Delete <strong>{book.title}</strong> and its files? This can't be undone.
+        </p>
+        <div className="book-detail-delete-confirm-actions">
+          <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDeleteBook} disabled={deleteBook.isPending}>
+            {deleteBook.isPending ? 'Deleting…' : 'Delete'}
+          </Button>
+        </div>
+      </BottomSheet>
     </div>
   );
 }

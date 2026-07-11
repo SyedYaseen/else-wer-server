@@ -1,11 +1,14 @@
 use crate::api::auth_extractor::{AuthUser, StreamAuth};
 use crate::api::match_meta::try_spawn_metadata_backfill;
-use crate::db::audiobooks::{get_file_path_by_id, get_files_by_book_id, list_all_books};
+use crate::api::middleware::{AdminUser, OrganizeUser};
+use crate::db::audiobooks::{
+    delete_book, get_book, get_file_path_by_id, get_files_by_book_id, list_all_books,
+};
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
 use crate::file_ops::org_books::save_organized_books;
 use crate::file_ops::scan_files::scan_files;
-use crate::models::audiobooks::FileMetadata;
+use crate::models::audiobooks::{DeleteBookDto, FileMetadata};
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
 use axum::extract::Multipart;
@@ -40,7 +43,7 @@ fn is_safe_relative_path(path: &str) -> bool {
 
 pub async fn upload_handler(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
     let mut file_name = None;
@@ -206,7 +209,7 @@ fn finish_scan(state: &AppState) {
 // Scan all audiobook files on local hard drive
 pub async fn scan_files_handler(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
 ) -> Result<impl IntoResponse, ApiError> {
     if !try_start_scan(&state) {
         return Ok((
@@ -238,7 +241,7 @@ pub async fn scan_files_handler(
 // Get list of all audiobookfiles grouped by author -> book -> files
 pub async fn list_scanned_files_handler(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
 ) -> Result<impl IntoResponse, ApiError> {
     let path = &state.config.audiobook_location;
     let db = &state.db_pool;
@@ -268,7 +271,7 @@ pub async fn list_scanned_files_handler(
 // Save organization made by user on their local audiofiles
 pub async fn save_organized_files_handler(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
     Json(payload): Json<Vec<ChangeDto>>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
@@ -279,6 +282,42 @@ pub async fn save_organized_files_handler(
         Json(json!({
             "message": "Confirmed entry",
         })),
+    ))
+}
+
+// Admin-only: delete a book, its files on disk, and its cover-art symlink.
+// Doesn't remove the files_location folder itself since it can be shared by
+// sibling books (loose single-file-book folders).
+pub async fn delete_book_handler(
+    State(state): State<AppState>,
+    AdminUser(_claims): AdminUser,
+    Json(payload): Json<DeleteBookDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    let book = get_book(db, payload.book_id).await?; // 404 before deleting anything
+
+    let files = get_files_by_book_id(db, payload.book_id).await?;
+    for file in &files {
+        if let Err(e) = fs::remove_file(&file.data.file_path).await {
+            tracing::warn!(
+                "delete_book: failed to remove file {}: {e}",
+                file.data.file_path
+            );
+        }
+    }
+
+    if let Some(cover_art) = &book.cover_art
+        && let Some(link_name) = cover_art.rsplit('/').next().and_then(|s| s.split('?').next())
+    {
+        let link_path = std::env::current_dir()?.join("covers").join(link_name);
+        let _ = fs::remove_file(&link_path).await;
+    }
+
+    delete_book(db, payload.book_id).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "message": format!("Book '{}' deleted", book.title) })),
     ))
 }
 

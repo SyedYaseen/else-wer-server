@@ -7,6 +7,7 @@ interface Claims {
   username: string;
   iat: number;
   exp: number;
+  can_organize: boolean;
 }
 
 interface AuthState {
@@ -15,6 +16,8 @@ interface AuthState {
   login: (token: string) => void;
   logout: () => void;
   isAuthenticated: () => boolean;
+  isAdmin: () => boolean;
+  canOrganize: () => boolean;
 }
 
 function decodeClaims(token: string): Claims | null {
@@ -37,6 +40,11 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: () => {
         const { claims } = get();
         return claims !== null && claims.exp * 1000 > Date.now();
+      },
+      isAdmin: () => get().claims?.role === 'admin',
+      canOrganize: () => {
+        const { claims } = get();
+        return claims?.role === 'admin' || claims?.can_organize === true;
       },
     }),
     { name: 'elsewer-auth' },

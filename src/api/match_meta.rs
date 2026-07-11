@@ -1,6 +1,6 @@
 use crate::{
     AppState,
-    api::{api_error::ApiError, auth_extractor::AuthUser},
+    api::{api_error::ApiError, middleware::OrganizeUser},
     db::audiobooks::{get_book, list_all_books, update_cover_art, update_description},
     db::series::{assign_books_to_series, set_book_match, upsert_series},
     file_ops::{book_cover::download_cover, book_meta_file::write_book_meta_json, meta_cleanup::fold_key},
@@ -48,7 +48,7 @@ fn candidate_confidence(candidate: &MatchCandidate, title: &str, author: &str) -
 // stored — matching is an explicit user action, never applied on scan.
 pub async fn match_book_candidates(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
     Path(book_id): Path<i64>,
     Query(params): Query<MatchQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -82,7 +82,7 @@ pub async fn match_book_candidates(
 // Apply the candidate the user picked: upsert the series row and link the book.
 pub async fn apply_book_match(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
     Path(book_id): Path<i64>,
     Json(payload): Json<ApplyMatchDto>,
 ) -> Result<impl IntoResponse, ApiError> {
@@ -156,7 +156,7 @@ pub async fn apply_book_match(
 // Sets series_locked either way so the automatic pass never overrides the user.
 pub async fn assign_series(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
     Json(payload): Json<AssignSeriesDto>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
@@ -345,7 +345,7 @@ pub(crate) fn try_spawn_metadata_backfill(state: AppState) -> bool {
 
 pub async fn backfill_metadata(
     State(state): State<AppState>,
-    AuthUser(_claims): AuthUser,
+    OrganizeUser(_claims): OrganizeUser,
 ) -> Result<impl IntoResponse, ApiError> {
     if try_spawn_metadata_backfill(state) {
         Ok((

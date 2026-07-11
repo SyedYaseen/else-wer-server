@@ -1,3 +1,5 @@
+claude --resume 9eac5d8b-7658-4a9c-b02f-5960480a7c81 -  admin panel
+
 # Phase 1 Technical Plan (Rust server on Pi Zero)
 ## File Scanning
 - Use walkdir or ignore crate to recursively list files.

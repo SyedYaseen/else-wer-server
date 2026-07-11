@@ -31,6 +31,10 @@ export async function rescanFiles(): Promise<void> {
   await api.get('/scan_files');
 }
 
+export async function deleteBook(bookId: number): Promise<void> {
+  await api.post('/delete_book', { book_id: bookId });
+}
+
 // cover_art already carries a `?v=<mtime>` cache-busting query param from the
 // server (see book_cover.rs create_cover_link), so it changes whenever the
 // underlying image actually does.

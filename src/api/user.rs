@@ -2,11 +2,11 @@ use std::path::Path;
 
 use crate::api::api_error::ApiError;
 use crate::api::middleware::AdminUser;
-use crate::db::user::{self, get_user_by_username};
+use crate::db::user::{self, admin_exists, get_user_by_username};
 use crate::models::user::{Claims, User};
 use crate::{
     AppState,
-    models::user::{ChangePasswordDto, LoginDto, UserDto},
+    models::user::{ChangePasswordDto, DeleteUserDto, LoginDto, UpdateUserPermissionsDto, UserDto, UserSummary},
 };
 use argon2::{
     Argon2,
@@ -70,6 +70,81 @@ pub async fn change_password(
     ))
 }
 
+// Admin dashboard: list all users (never leaks password_hash/salt).
+pub async fn list_users(
+    AdminUser(_claims): AdminUser,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+    let users: Vec<UserSummary> = user::list_users(db)
+        .await?
+        .into_iter()
+        .map(UserSummary::from)
+        .collect();
+
+    Ok((StatusCode::OK, Json(json!({ "users": users }))))
+}
+
+// Admin dashboard: delete a user. Can't delete yourself or the last remaining admin.
+pub async fn delete_user(
+    AdminUser(claims): AdminUser,
+    State(state): State<AppState>,
+    Json(payload): Json<DeleteUserDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+
+    if payload.user_id == claims.sub {
+        return Err(ApiError::BadRequest(
+            "You can't delete your own account".into(),
+        ));
+    }
+
+    let target = user::get_user_by_id(db, payload.user_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("User not found".into()))?;
+
+    if target.is_admin && admin_exists(db).await? <= 1 {
+        return Err(ApiError::BadRequest(
+            "Can't delete the last remaining admin".into(),
+        ));
+    }
+
+    user::delete_user(db, payload.user_id).await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "message": format!("User {} deleted", target.username) })),
+    ))
+}
+
+// Admin dashboard: toggle a user's admin/organize permissions. Can't demote the
+// last remaining admin (whether or not it's yourself).
+pub async fn update_user_permissions(
+    AdminUser(_claims): AdminUser,
+    State(state): State<AppState>,
+    Json(payload): Json<UpdateUserPermissionsDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let db = &state.db_pool;
+
+    let target = user::get_user_by_id(db, payload.user_id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("User not found".into()))?;
+
+    if target.is_admin && !payload.is_admin && admin_exists(db).await? <= 1 {
+        return Err(ApiError::BadRequest(
+            "Can't remove admin from the last remaining admin".into(),
+        ));
+    }
+
+    user::update_user_permissions(db, payload.user_id, payload.is_admin, payload.can_organize)
+        .await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "message": format!("Permissions updated for {}", target.username) })),
+    ))
+}
+
 pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, ApiError> {
     let argon2 = Argon2::default();
     let password_bytes = &user.password.clone().into_bytes();
@@ -84,6 +159,7 @@ pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, Ap
         &user.is_admin,
         &password_hash,
         &salt.to_string(),
+        &user.can_organize,
     )
     .await?;
 
@@ -141,6 +217,7 @@ async fn auth_and_issue_jwt(
         username: user.username.clone(),
         iat: now.timestamp() as usize,
         exp: exp.timestamp() as usize,
+        can_organize: user.can_organize,
     };
 
     let token = encode(

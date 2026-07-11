@@ -7,6 +7,8 @@ pub struct UserDto {
     pub username: String,
     pub password: String,
     pub is_admin: bool,
+    #[serde(default)]
+    pub can_organize: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,6 +30,39 @@ pub struct User {
     pub is_admin: bool,
     pub password_hash: String,
     pub salt: String,
+    pub can_organize: bool,
+}
+
+/// Public-facing user shape for the admin dashboard — never leaks password_hash/salt.
+#[derive(Debug, Serialize)]
+pub struct UserSummary {
+    pub id: i64,
+    pub username: String,
+    pub is_admin: bool,
+    pub can_organize: bool,
+}
+
+impl From<User> for UserSummary {
+    fn from(u: User) -> Self {
+        UserSummary {
+            id: u.id,
+            username: u.username,
+            is_admin: u.is_admin,
+            can_organize: u.can_organize,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserPermissionsDto {
+    pub user_id: i64,
+    pub is_admin: bool,
+    pub can_organize: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteUserDto {
+    pub user_id: i64,
 }
 
 #[derive(sqlx::FromRow, Serialize, Deserialize, Debug)]
@@ -56,4 +91,8 @@ pub struct Claims {
     pub username: String, // optional additional info
     pub exp: usize,       // expiration timestamp (seconds since epoch)
     pub iat: usize,       // issued at timestamp
+    // Defaulted so tokens issued before this field existed still decode (as false,
+    // the safe default) instead of failing auth outright.
+    #[serde(default)]
+    pub can_organize: bool,
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { Button } from '../components/ui/Button';
 import { ActionMenu } from '../components/ui/ActionMenu';
@@ -27,6 +27,9 @@ const LIBRARY_TABS = [
 export function LibraryPage() {
   const username = useAuthStore((s) => s.claims?.username);
   const logout = useAuthStore((s) => s.logout);
+  const isAdmin = useAuthStore((s) => s.isAdmin());
+  const canOrganize = useAuthStore((s) => s.canOrganize());
+  const navigate = useNavigate();
   const [scanning, setScanning] = useState(false);
   const { canInstall, isIOS, promptInstall } = useInstallPrompt();
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
@@ -100,9 +103,11 @@ export function LibraryPage() {
           <Button variant="secondary" onClick={handleRescan} disabled={scanning}>
             <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
-          <Link className="library-organize-link" to="/organize">
-            Organize
-          </Link>
+          {canOrganize && (
+            <Link className="library-organize-link" to="/organize">
+              Organize
+            </Link>
+          )}
           <ActionMenu
             items={[
               books.length > 0 &&
@@ -115,6 +120,10 @@ export function LibraryPage() {
                 label: 'Install app',
                 icon: <DownloadIcon size={16} />,
                 onClick: handleInstallClick,
+              },
+              isAdmin && {
+                label: 'Manage users',
+                onClick: () => navigate('/admin/users'),
               },
               { label: 'Log out', icon: <LogoutIcon size={16} />, onClick: logout },
             ]}
