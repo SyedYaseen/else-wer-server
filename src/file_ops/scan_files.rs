@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
+    db::libraries::list_libraries,
     db::meta_scan::{delete_removed_files, fetch_known_file_paths, group_and_attach_files},
     file_ops::meta_cleanup::meta_cleanup,
     models::meta_scan::FileScanCache,
@@ -172,9 +173,20 @@ async fn capture_file_paths(path_str: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError> {
+pub async fn scan_files(library_id: i64, path_str: &str, db: &SqlitePool) -> Result<u64, ApiError> {
     tracing::info!("Scanning audiobook location: {path_str}");
-    let scan_cache = Arc::new(RwLock::new(fetch_known_file_paths(db).await?));
+
+    // WalkDir silently yields zero entries for a missing/unreadable path, which
+    // would otherwise look identical to "every file in this library was deleted"
+    // below and wipe the library's catalog. Fail loudly instead of treating an
+    // unreachable path (typo'd edit, unmounted disk) as a mass deletion.
+    if !Path::new(path_str).is_dir() {
+        return Err(ApiError::BadRequest(format!(
+            "Library path is not a reachable directory: {path_str}"
+        )));
+    }
+
+    let scan_cache = Arc::new(RwLock::new(fetch_known_file_paths(db, library_id).await?));
     let fsc_metadatas: Arc<RwLock<Vec<FileScanCache>>> = Arc::new(RwLock::new(Vec::new()));
     let paths = capture_file_paths(path_str).await;
 
@@ -242,9 +254,34 @@ pub async fn scan_files(path_str: &str, db: &SqlitePool) -> Result<u64, ApiError
     let mut count = 0;
     if !metadatas.is_empty() {
         for chunk in metadatas.chunks(CHUNK_SIZE) {
-            count += group_and_attach_files(db, chunk).await?;
+            count += group_and_attach_files(db, library_id, chunk).await?;
         }
     }
 
+    Ok(count)
+}
+
+/// Scans every configured library root in turn, summing the new-files count.
+/// Callers (manual/upload/lazy scan triggers) already serialize against each other
+/// via `AppState::scan_guard`; this just replaces the old single hardcoded-path call.
+///
+/// Each library's scan is independent: one library failing (e.g. an unmounted disk)
+/// is logged and skipped rather than aborting the whole batch — libraries scanned
+/// before the failure keep their committed results, and libraries after it still get
+/// their turn, unlike propagating the first error via `?` which would silently drop
+/// everything already accomplished and skip everything still to come.
+pub async fn scan_all_libraries(db: &SqlitePool) -> Result<u64, ApiError> {
+    let libraries = list_libraries(db).await?;
+    let mut count = 0;
+    for library in libraries {
+        match scan_files(library.id, &library.path, db).await {
+            Ok(n) => count += n,
+            Err(e) => tracing::error!(
+                library_id = library.id,
+                library_path = %library.path,
+                "scan failed for library, continuing with remaining libraries: {e}"
+            ),
+        }
+    }
     Ok(count)
 }

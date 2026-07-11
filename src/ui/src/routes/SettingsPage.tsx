@@ -88,6 +88,11 @@ export function SettingsPage() {
             Manage users
           </button>
         )}
+        {isAdmin && (
+          <button className="settings-account-row" onClick={() => navigate('/admin/libraries')}>
+            Manage libraries
+          </button>
+        )}
         <button className="settings-account-row" onClick={logout}>
           Log out
         </button>

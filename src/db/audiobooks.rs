@@ -4,61 +4,68 @@ use crate::{
 };
 use sqlx::{Pool, QueryBuilder, Sqlite};
 
-pub async fn list_all_books(db: &Pool<Sqlite>) -> Result<Vec<AudioBookRow>, ApiError> {
-    let books = sqlx::query_as::<_, AudioBookRow>(
+// Shared by list_books/get_book so the column list and joins live in exactly one
+// place — previously duplicated near-verbatim across four functions.
+const BOOK_COLUMNS: &str = r#"
+    b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
+    b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
+    b.user_locked, b.description, b.series_locked, s.name AS series_name,
+    b.library_id, l.name AS library_name
+"#;
+
+const BOOK_FROM: &str = r#"
+    FROM audiobooks b
+    LEFT JOIN series s ON s.id = b.series_id
+    LEFT JOIN libraries l ON l.id = b.library_id
+"#;
+
+/// Unfiltered when both args are None (list_all_books' old behavior). `q` matches
+/// title/author/series/narrated_by, case-insensitive substring (same field set as
+/// the now-superseded client-side filter in useBookSearch.ts). `library_id` scopes
+/// to one library.
+pub async fn list_books(
+    db: &Pool<Sqlite>,
+    q: Option<&str>,
+    library_id: Option<i64>,
+) -> Result<Vec<AudioBookRow>, ApiError> {
+    let pattern = q.map(|q| {
+        let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        format!("%{escaped}%")
+    });
+
+    let sql = format!(
         r#"
-        SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
-               b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, b.description, b.series_locked, s.name AS series_name
-        FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
+        SELECT {BOOK_COLUMNS}
+        {BOOK_FROM}
+        WHERE (?1 IS NULL OR b.title LIKE ?1 ESCAPE '\' OR b.author LIKE ?1 ESCAPE '\'
+               OR b.series LIKE ?1 ESCAPE '\' OR b.narrated_by LIKE ?1 ESCAPE '\')
+          AND (?2 IS NULL OR b.library_id = ?2)
         ORDER BY b.author, b.series, b.title
-        "#,
-    )
-    .fetch_all(db)
-    .await?;
+        "#
+    );
 
-    Ok(books)
-}
-
-/// Same field set as the (now superseded) client-side filter in useBookSearch.ts,
-/// for result parity: title/author/series/narrated_by, case-insensitive substring.
-pub async fn search_books(db: &Pool<Sqlite>, q: &str) -> Result<Vec<AudioBookRow>, ApiError> {
-    let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-    let pattern = format!("%{escaped}%");
-
-    let books = sqlx::query_as::<_, AudioBookRow>(
-        r#"
-        SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
-               b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, b.description, b.series_locked, s.name AS series_name
-        FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
-        WHERE b.title LIKE ?1 ESCAPE '\'
-           OR b.author LIKE ?1 ESCAPE '\'
-           OR b.series LIKE ?1 ESCAPE '\'
-           OR b.narrated_by LIKE ?1 ESCAPE '\'
-        ORDER BY b.author, b.series, b.title
-        "#,
-    )
-    .bind(pattern)
-    .fetch_all(db)
-    .await?;
+    let books = sqlx::query_as::<_, AudioBookRow>(&sql)
+        .bind(pattern)
+        .bind(library_id)
+        .fetch_all(db)
+        .await?;
 
     Ok(books)
 }
 
 pub async fn get_book(db: &Pool<Sqlite>, book_id: i64) -> Result<AudioBookRow, ApiError> {
-    let book = sqlx::query_as::<_, AudioBookRow>(
+    let sql = format!(
         r#"
-        SELECT b.id, b.author, b.series, b.title, b.book_size, b.files_location, b.cover_art,
-               b.duration, b.metadata, b.series_id, b.series_sequence, b.asin, b.narrated_by,
-               b.user_locked, b.description, b.series_locked, s.name AS series_name
-        FROM audiobooks b LEFT JOIN series s ON s.id = b.series_id
+        SELECT {BOOK_COLUMNS}
+        {BOOK_FROM}
         WHERE b.id = ?1
-        "#,
-    )
-    .bind(book_id)
-    .fetch_optional(db)
-    .await?;
+        "#
+    );
+
+    let book = sqlx::query_as::<_, AudioBookRow>(&sql)
+        .bind(book_id)
+        .fetch_optional(db)
+        .await?;
 
     book.ok_or_else(|| ApiError::NotFound(format!("No book with id {book_id}")))
 }

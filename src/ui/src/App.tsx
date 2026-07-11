@@ -9,6 +9,7 @@ import { BookDetailPage } from './routes/BookDetailPage';
 import { PlayerPage } from './routes/PlayerPage';
 import { OrganizePage } from './routes/OrganizePage';
 import { UserManagementPage } from './routes/UserManagementPage';
+import { LibrariesAdminPage } from './routes/LibrariesAdminPage';
 import { SettingsPage } from './routes/SettingsPage';
 import { StatsPage } from './routes/StatsPage';
 import { PlayerRoot } from './components/player/PlayerRoot';
@@ -37,6 +38,7 @@ export default function App() {
             </Route>
             <Route element={<RequireAdmin />}>
               <Route path="/admin/users" element={<UserManagementPage />} />
+              <Route path="/admin/libraries" element={<LibrariesAdminPage />} />
             </Route>
           </Route>
         </Routes>

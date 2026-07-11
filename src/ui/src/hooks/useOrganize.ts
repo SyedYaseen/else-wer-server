@@ -8,8 +8,12 @@ export const SCAN_KEYS = {
   files: ['scannedFiles'] as const,
 };
 
-export function useScannedFiles() {
-  return useQuery({ queryKey: SCAN_KEYS.files, queryFn: listScannedFiles });
+// libraryId omitted or undefined -> all libraries (today's default behavior).
+export function useScannedFiles(libraryId?: number) {
+  return useQuery({
+    queryKey: libraryId === undefined ? SCAN_KEYS.files : [...SCAN_KEYS.files, libraryId],
+    queryFn: () => listScannedFiles(libraryId),
+  });
 }
 
 export function useApplyChanges() {

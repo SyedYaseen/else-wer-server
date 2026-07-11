@@ -17,6 +17,8 @@ export interface AudioBookRow {
   user_locked: boolean;
   description: string | null;
   series_locked: boolean;
+  library_id: number | null;
+  library_name: string | null;
 }
 
 // Mirrors src/models/user.rs::Progress (GET /api/list_inprogress etc.)

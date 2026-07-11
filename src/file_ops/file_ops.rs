@@ -1,5 +1,5 @@
 use crate::api::api_error::ApiError;
-use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, list_all_books};
+use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, list_books};
 use crate::file_ops::book_cover::create_cover_link;
 use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata};
 use futures::{StreamExt, stream};
@@ -305,7 +305,7 @@ pub async fn scan_for_audiobooks(
 
     capture_metadata(inserted_books, &db).await?;
 
-    let audio_books = list_all_books(db).await?;
+    let audio_books = list_books(db, None, None).await?;
 
     Ok(audio_books)
 }

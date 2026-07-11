@@ -10,6 +10,7 @@ pub mod api_error;
 mod audiobooks;
 mod auth_extractor;
 mod bookmarks;
+mod libraries;
 mod match_meta;
 mod middleware;
 pub mod rate_limit;
@@ -25,6 +26,10 @@ use crate::{
             stream_file, upload_handler,
         },
         bookmarks::{create_bookmark_handler, delete_bookmark_handler, list_bookmarks_handler},
+        libraries::{
+            create_library_handler, delete_library_handler, list_libraries_handler,
+            scan_library_handler, update_library_handler,
+        },
         match_meta::{apply_book_match, assign_series, backfill_metadata, match_book_candidates},
         stats::{get_daily_stats, get_finished_books},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
@@ -81,6 +86,16 @@ pub async fn routes() -> Router<AppState> {
             "/bookmarks/{bookmark_id}",
             delete(delete_bookmark_handler),
         )
+        // Libraries
+        .route(
+            "/libraries",
+            get(list_libraries_handler).post(create_library_handler),
+        )
+        .route(
+            "/libraries/{id}",
+            put(update_library_handler).delete(delete_library_handler),
+        )
+        .route("/libraries/{id}/scan", post(scan_library_handler))
         // Stats
         .route("/stats/daily", get(get_daily_stats))
         .route("/stats/finished", get(get_finished_books))

@@ -18,7 +18,8 @@ import {
   useRescanScannedFiles,
   useBackfillMetadata,
 } from '../hooks/useOrganize';
-import { useLibraryBooks } from '../hooks/useLibraryBooks';
+import { useLibraryBooks, useLibraries } from '../hooks/useLibraryBooks';
+import { Tabs } from '../components/ui/Tabs';
 import { buildTree } from '../types/scan';
 import type { BookGroup, FileInfo, ChangeDto } from '../types/scan';
 import { describeChanges } from '../lib/describeChanges';
@@ -41,7 +42,10 @@ type SheetState =
   | null;
 
 export function OrganizePage() {
-  const { data, isLoading, isError, refetch } = useScannedFiles();
+  const { data: libraries = [] } = useLibraries();
+  const [libraryFilter, setLibraryFilter] = useState<string>('all');
+  const filterLibraryId = libraryFilter === 'all' ? undefined : Number(libraryFilter);
+  const { data, isLoading, isError, refetch } = useScannedFiles(filterLibraryId);
   const applyChanges = useApplyChanges();
   const rescan = useRescanScannedFiles();
   const backfillMetadata = useBackfillMetadata();
@@ -306,6 +310,17 @@ export function OrganizePage() {
           </Link>
         </div>
       </div>
+
+      {libraries.length > 1 && (
+        <Tabs
+          tabs={[
+            { id: 'all', label: 'All Libraries' },
+            ...libraries.map((l) => ({ id: String(l.id), label: l.name })),
+          ]}
+          activeId={libraryFilter}
+          onChange={setLibraryFilter}
+        />
+      )}
 
       {isLoading && <div className="organize-state">Loading scanned files…</div>}
       {isError && (

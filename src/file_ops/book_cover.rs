@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 
 use crate::{
     api::api_error::ApiError,
-    db::audiobooks::{list_all_books, update_cover_art},
+    db::audiobooks::{list_books, update_cover_art},
     models::audiobooks::AudioBookRow,
 };
 
@@ -110,7 +110,7 @@ pub async fn download_cover(url: &str, book: &AudioBookRow) -> Result<Option<Str
 }
 
 pub async fn cover_links(db: &SqlitePool) -> Result<(), ApiError> {
-    let books = list_all_books(db).await?;
+    let books = list_books(db, None, None).await?;
     for book in books {
         for entry in WalkDir::new(&book.files_location)
             .contents_first(true)

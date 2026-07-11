@@ -10,7 +10,7 @@ import { BookGroupSection } from '../components/library/BookGroupSection';
 import { SetSeriesSheet } from '../components/library/SetSeriesSheet';
 import { SearchBar } from '../components/library/SearchBar';
 import { ContinueListeningRow } from '../components/library/ContinueListeningRow';
-import { useLibraryBooks, useInProgressBooks, useRescan } from '../hooks/useLibraryBooks';
+import { useLibraryBooks, useLibraries, useInProgressBooks, useRescan } from '../hooks/useLibraryBooks';
 import { useBookSearch } from '../hooks/useBookSearch';
 import { useInstallPrompt } from '../pwa/useInstallPrompt';
 import { buildContinueListening } from '../lib/continueListening';
@@ -41,9 +41,18 @@ export function LibraryPage() {
   }
 
   const { data: books = [], isLoading, isError, refetch } = useLibraryBooks();
+  const { data: libraries = [] } = useLibraries();
   const { data: progress = [] } = useInProgressBooks();
   const rescan = useRescan();
   const [activeTab, setActiveTab] = useState('all');
+  const [libraryFilter, setLibraryFilter] = useState<string>('all');
+
+  const scopedBooks =
+    libraryFilter === 'all' ? books : books.filter((b) => String(b.library_id) === libraryFilter);
+  const libraryTabs = [
+    { id: 'all', label: 'All Libraries' },
+    ...libraries.map((l) => ({ id: String(l.id), label: l.name })),
+  ];
 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedBookIds, setSelectedBookIds] = useState<Set<number>>(new Set());
@@ -67,9 +76,9 @@ export function LibraryPage() {
     .filter((b) => selectedBookIds.has(b.id))
     .map((b) => ({ id: b.id, title: b.title, sequence: b.series_sequence }));
 
-  const allSearch = useBookSearch(books);
-  const authorSearch = useBookSearch(books);
-  const seriesSearch = useBookSearch(books);
+  const allSearch = useBookSearch(scopedBooks);
+  const authorSearch = useBookSearch(scopedBooks);
+  const seriesSearch = useBookSearch(scopedBooks);
 
   const authorGroups = groupByAuthor(authorSearch.filtered);
   const seriesGroups = groupBySeries(seriesSearch.filtered);
@@ -83,7 +92,7 @@ export function LibraryPage() {
     }
   }
 
-  const continueListening = allSearch.hasQuery ? [] : buildContinueListening(books, progress);
+  const continueListening = allSearch.hasQuery ? [] : buildContinueListening(scopedBooks, progress);
 
   return (
     <div className="library-page">
@@ -151,6 +160,9 @@ export function LibraryPage() {
       {books.length > 0 && (
         <>
           <ContinueListeningRow items={continueListening} />
+          {libraries.length > 1 && (
+            <Tabs tabs={libraryTabs} activeId={libraryFilter} onChange={setLibraryFilter} />
+          )}
           <Tabs tabs={LIBRARY_TABS} activeId={activeTab} onChange={setActiveTab} />
 
           {activeTab === 'all' && (

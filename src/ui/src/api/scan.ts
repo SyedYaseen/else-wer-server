@@ -5,8 +5,9 @@ interface ListScannedFilesResponse {
   files: GroupedFiles;
 }
 
-export async function listScannedFiles(): Promise<GroupedFiles> {
-  const data = await api.get<ListScannedFilesResponse>('/list_scanned_files');
+export async function listScannedFiles(libraryId?: number): Promise<GroupedFiles> {
+  const query = libraryId !== undefined ? `?library_id=${libraryId}` : '';
+  const data = await api.get<ListScannedFilesResponse>(`/list_scanned_files${query}`);
   return data.files;
 }
 

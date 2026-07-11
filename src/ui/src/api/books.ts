@@ -13,9 +13,12 @@ interface FileMetadataResponse {
   data: FileMetadata[];
 }
 
-export async function listBooks(q?: string): Promise<AudioBookRow[]> {
-  const query = q && q.trim().length > 0 ? `?q=${encodeURIComponent(q.trim())}` : '';
-  const data = await api.get<ListBooksResponse>(`/list_books${query}`);
+export async function listBooks(q?: string, libraryId?: number): Promise<AudioBookRow[]> {
+  const params = new URLSearchParams();
+  if (q && q.trim().length > 0) params.set('q', q.trim());
+  if (libraryId !== undefined) params.set('library_id', String(libraryId));
+  const query = params.toString();
+  const data = await api.get<ListBooksResponse>(`/list_books${query ? `?${query}` : ''}`);
   return data.books;
 }
 

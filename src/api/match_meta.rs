@@ -1,7 +1,7 @@
 use crate::{
     AppState,
     api::{api_error::ApiError, middleware::OrganizeUser},
-    db::audiobooks::{get_book, list_all_books, update_cover_art, update_description},
+    db::audiobooks::{get_book, list_books, update_cover_art, update_description},
     db::series::{assign_books_to_series, set_book_match, upsert_series},
     file_ops::{book_cover::download_cover, book_meta_file::write_book_meta_json, meta_cleanup::fold_key},
     models::match_meta::{ApplyMatchDto, AssignSeriesDto, MatchCandidate},
@@ -221,7 +221,7 @@ pub struct BackfillStats {
 pub(crate) async fn run_metadata_backfill(
     db: &sqlx::SqlitePool,
 ) -> Result<BackfillStats, ApiError> {
-    let books: Vec<_> = list_all_books(db)
+    let books: Vec<_> = list_books(db, None, None)
         .await?
         .into_iter()
         .filter(|b| {

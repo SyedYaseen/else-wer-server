@@ -20,6 +20,8 @@ pub struct AudioBookRow {
     pub user_locked: bool,
     pub description: Option<String>,
     pub series_locked: bool,
+    pub library_id: Option<i64>,
+    pub library_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

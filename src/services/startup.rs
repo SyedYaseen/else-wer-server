@@ -1,5 +1,6 @@
 use crate::api::api_error::ApiError;
 use crate::api::user::save_pwd_hash;
+use crate::db::libraries::list_libraries;
 use crate::db::user::admin_exists;
 use crate::models::user::UserDto;
 use sqlx::sqlite::SqlitePool;
@@ -59,6 +60,49 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> Result<(), ApiError> {
             "Admin user created with default credentials username='admin' password='admin' — change this password immediately via PUT /api/user/change_password"
         );
     }
+
+    Ok(())
+}
+
+/// One-time migration off the single AUDIOBOOKS_LOCATION env var: seeds a "Default"
+/// library from it and backfills any pre-existing audiobooks rows onto it, so an
+/// upgrade doesn't orphan data. No-ops once at least one library row exists — after
+/// that, libraries are fully DB-managed via the admin API and the env var is unused.
+///
+/// The insert + backfill run in one transaction so a crash/error between the two
+/// can't leave the "Default" library created but pre-existing books never backfilled
+/// — the `list_libraries().is_empty()` guard above only re-runs this once, so without
+/// the transaction a partial failure would orphan those books' library_id forever.
+pub async fn ensure_default_library(db: &SqlitePool, seed_path: &str) -> Result<(), ApiError> {
+    if !list_libraries(db).await?.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = db.begin().await?;
+
+    let library_id: i64 = sqlx::query_scalar(
+        "INSERT INTO libraries (name, path, is_default) VALUES (?1, ?2, 1) RETURNING id",
+    )
+    .bind("Default")
+    .bind(seed_path)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let result = sqlx::query!(
+        "UPDATE audiobooks SET library_id = ?1 WHERE library_id IS NULL",
+        library_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    tracing::info!(
+        library_id,
+        path = seed_path,
+        backfilled_books = result.rows_affected(),
+        "seeded Default library"
+    );
 
     Ok(())
 }

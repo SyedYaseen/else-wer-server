@@ -1,5 +1,6 @@
 pub mod audiobooks;
 pub mod bookmarks;
+pub mod libraries;
 pub mod meta_scan;
 pub mod series;
 pub mod stats;

@@ -2,13 +2,13 @@ use crate::api::auth_extractor::{AuthUser, StreamAuth};
 use crate::api::match_meta::try_spawn_metadata_backfill;
 use crate::api::middleware::{AdminUser, OrganizeUser};
 use crate::db::audiobooks::{
-    delete_book, get_book, get_file_path_by_id, get_files_by_book_id, list_all_books,
-    reorder_files, search_books,
+    delete_book, get_book, get_file_path_by_id, get_files_by_book_id, list_books, reorder_files,
 };
+use crate::db::libraries::{get_default_library, get_library};
 use crate::db::meta_scan::{cache_row_count, get_grouped_files};
 use crate::file_ops::book_cover::cover_links;
 use crate::file_ops::org_books::save_organized_books;
-use crate::file_ops::scan_files::scan_files;
+use crate::file_ops::scan_files::{scan_all_libraries, scan_files};
 use crate::models::audiobooks::{DeleteBookDto, FileMetadata};
 use crate::models::meta_scan::ChangeDto;
 use crate::{AppState, api::api_error::ApiError};
@@ -20,7 +20,6 @@ use axum::{
     http::{Response, StatusCode, header},
     response::IntoResponse,
 };
-use std::sync::atomic::Ordering;
 
 use sqlx::{Pool, Sqlite};
 use tower::util::ServiceExt;
@@ -53,8 +52,8 @@ pub async fn upload_handler(
     let mut total_chunks = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut folder_path = None;
+    let mut library_id: Option<i64> = None;
 
-    let upload_dir = &state.config.audiobook_location;
     let db = &state.db_pool;
 
     while let Some(field) = multipart
@@ -106,6 +105,15 @@ pub async fn upload_handler(
                     .await
                     .map_err(|e| ApiError::BadRequest(format!("Invalid folderPath field: {e}")))?,
             );
+        } else if name == "libraryId" {
+            let text = field
+                .text()
+                .await
+                .map_err(|e| ApiError::BadRequest(format!("Invalid libraryId field: {e}")))?;
+            library_id = Some(
+                text.parse::<i64>()
+                    .map_err(|_| ApiError::BadRequest("libraryId must be a number".into()))?,
+            );
         }
     }
 
@@ -116,6 +124,15 @@ pub async fn upload_handler(
         file_bytes.ok_or_else(|| ApiError::BadRequest("Missing file data".into()))?,
         folder_path.ok_or_else(|| ApiError::BadRequest("Missing folderPath".into()))?,
     );
+
+    // Chunks 1..N of the same upload must land in the same library as chunk 0 —
+    // re-resolve every call (stateless across chunks) rather than trusting the
+    // client to keep sending the same libraryId.
+    let library = match library_id {
+        Some(id) => get_library(db, id).await?,
+        None => get_default_library(db).await?,
+    };
+    let upload_dir = &library.path;
 
     if !is_safe_filename(&file_name) {
         return Err(ApiError::BadRequest("Invalid fileName".into()));
@@ -163,15 +180,15 @@ pub async fn upload_handler(
         tracing::info!("File saved to {final_path}");
 
         let mut count = 0u64;
-        if try_start_scan(&state) {
-            let result = scan_files(upload_dir, db).await;
-            finish_scan(&state);
+        if state.scan_guard.try_start_library(library.id) {
+            let result = scan_files(library.id, &library.path, db).await;
+            state.scan_guard.finish_library(library.id);
             count = result?;
             cover_links(db).await?;
             // Fire-and-forget: fills missing cover/description/series from Audible (1.5s/book).
             try_spawn_metadata_backfill(state.clone());
         } else {
-            tracing::info!("Skipping post-upload rescan: a scan is already running");
+            tracing::info!("Skipping post-upload rescan: a scan is already running for this library");
         }
 
         return Ok((
@@ -194,37 +211,22 @@ pub async fn upload_handler(
     ))
 }
 
-/// Guards a full library scan: one pass at a time across manual/upload/lazy triggers.
-/// Unlike `try_spawn_metadata_backfill`, callers await the scan inline (they need its
-/// result), so this just marks/clears the flag around the call rather than spawning.
-fn try_start_scan(state: &AppState) -> bool {
-    state
-        .scan_running
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_ok()
-}
-
-fn finish_scan(state: &AppState) {
-    state.scan_running.store(false, Ordering::SeqCst);
-}
-
 // Scan all audiobook files on local hard drive
 pub async fn scan_files_handler(
     State(state): State<AppState>,
     OrganizeUser(_claims): OrganizeUser,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !try_start_scan(&state) {
+    if !state.scan_guard.try_start_full() {
         return Ok((
             StatusCode::CONFLICT,
             Json(json!({ "message": "A scan is already running" })),
         ));
     }
 
-    let path = &state.config.audiobook_location;
     let db = &state.db_pool;
 
-    let result = scan_files(path, db).await;
-    finish_scan(&state);
+    let result = scan_all_libraries(db).await;
+    state.scan_guard.finish_full();
     let files_count = result?;
 
     cover_links(db).await?;
@@ -241,26 +243,53 @@ pub async fn scan_files_handler(
 }
 
 // Get list of all audiobookfiles grouped by author -> book -> files
+#[derive(Deserialize)]
+pub struct ListScannedFilesQuery {
+    library_id: Option<i64>,
+}
+
 pub async fn list_scanned_files_handler(
     State(state): State<AppState>,
     OrganizeUser(_claims): OrganizeUser,
+    Query(params): Query<ListScannedFilesQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let path = &state.config.audiobook_location;
     let db = &state.db_pool;
 
-    if cache_row_count(db).await? == 0 {
-        if !try_start_scan(&state) {
-            return Ok((
-                StatusCode::CONFLICT,
-                Json(json!({ "message": "A scan is already running" })),
-            ));
-        }
-        let result = scan_files(path, db).await;
-        finish_scan(&state);
+    if cache_row_count(db, params.library_id).await? == 0 {
+        // Scoped to just the requested library when filtering by one, so opening a
+        // newly-added library's (empty) tab triggers only that library's scan
+        // instead of a full re-scan of every library.
+        let result = match params.library_id {
+            Some(id) => {
+                if !state.scan_guard.try_start_library(id) {
+                    return Ok((
+                        StatusCode::CONFLICT,
+                        Json(json!({ "message": "A scan is already running" })),
+                    ));
+                }
+                let result = match get_library(db, id).await {
+                    Ok(library) => scan_files(library.id, &library.path, db).await,
+                    Err(e) => Err(e),
+                };
+                state.scan_guard.finish_library(id);
+                result
+            }
+            None => {
+                if !state.scan_guard.try_start_full() {
+                    return Ok((
+                        StatusCode::CONFLICT,
+                        Json(json!({ "message": "A scan is already running" })),
+                    ));
+                }
+                let result = scan_all_libraries(db).await;
+                state.scan_guard.finish_full();
+                result
+            }
+        };
         result?;
         cover_links(db).await?;
     }
-    let grouped_files = get_grouped_files(db).await?;
+    let grouped_files = get_grouped_files(db, params.library_id).await?;
 
     Ok((
         StatusCode::OK,
@@ -326,10 +355,12 @@ pub async fn delete_book_handler(
 #[derive(Deserialize)]
 pub struct ListBooksQuery {
     q: Option<String>,
+    library_id: Option<i64>,
 }
 
 // List audiobooks from AudioBooks table, optionally filtered by `?q=` search term
-// (matches title/author/series/narrated_by, see db::audiobooks::search_books).
+// (matches title/author/series/narrated_by, see db::audiobooks::list_books) and/or
+// `?library_id=`.
 pub async fn list_books_handler(
     State(state): State<AppState>,
     AuthUser(_claims): AuthUser,
@@ -337,10 +368,7 @@ pub async fn list_books_handler(
 ) -> Result<impl IntoResponse, ApiError> {
     let db = &state.db_pool;
     let q = params.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let books = match q {
-        Some(q) => search_books(db, q).await?,
-        None => list_all_books(&db).await?,
-    };
+    let books = list_books(db, q, params.library_id).await?;
     Ok(Json(json!({
         "message": "Books list",
         "count": books.len(),

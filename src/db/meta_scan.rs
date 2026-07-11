@@ -13,17 +13,24 @@ use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqliteConnection, SqlitePool};
 use std::collections::{HashMap, HashSet};
 use tokio::{fs, io::AsyncWriteExt};
 
-pub async fn cache_row_count(db: &Pool<Sqlite>) -> Result<i64, ApiError> {
-    let row = sqlx::query!(
+/// `library_id = None` counts files across every library (used by the "any files
+/// scanned at all yet" bootstrap check). `Some(id)` scopes to one library, so a
+/// newly-added library with zero files doesn't look "already scanned" just because
+/// other libraries have files.
+pub async fn cache_row_count(db: &Pool<Sqlite>, library_id: Option<i64>) -> Result<i64, ApiError> {
+    let (count,): (i64,) = sqlx::query_as(
         r#"
-        SELECT COUNT(id) as count
-        FROM files
-        "#
+        SELECT COUNT(f.id)
+        FROM files f
+        JOIN audiobooks b ON b.id = f.book_id
+        WHERE ?1 IS NULL OR b.library_id = ?1
+        "#,
     )
+    .bind(library_id)
     .fetch_one(db)
     .await?;
 
-    Ok(row.count)
+    Ok(count)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -41,6 +48,7 @@ pub struct FileScanCacheFilePaths {
 /// mid-chunk failure can't leave a book without its files (a clean retry next scan).
 pub async fn group_and_attach_files(
     db: &SqlitePool,
+    library_id: i64,
     chunk: &[FileScanCache],
 ) -> Result<u64, ApiError> {
     if chunk.is_empty() {
@@ -97,7 +105,8 @@ pub async fn group_and_attach_files(
         }
         let meta_applied = meta.is_some();
 
-        let book_id = resolve_book_id(&mut tx, &group, lock_book, meta_applied).await?;
+        let book_id =
+            resolve_book_id(&mut tx, library_id, &group, lock_book, meta_applied).await?;
         attached += attach_files(&mut tx, book_id, chunk, &group.row_indices).await?;
         if let Some(meta) = meta {
             pending_series_links.push((book_id, meta));
@@ -176,6 +185,7 @@ struct BookCandidate {
 /// the group's values came from the folder's metadata.json.
 async fn resolve_book_id(
     conn: &mut SqliteConnection,
+    library_id: i64,
     group: &BookGroup,
     lock_book: bool,
     from_meta_file: bool,
@@ -184,10 +194,11 @@ async fn resolve_book_id(
         r#"
         SELECT id, author, title, series, user_locked
         FROM audiobooks
-        WHERE files_location = ?
+        WHERE files_location = ? AND library_id = ?
         "#,
     )
     .bind(&group.path_parent)
+    .bind(library_id)
     .fetch_all(&mut *conn)
     .await?;
 
@@ -247,10 +258,16 @@ async fn resolve_book_id(
     // The same book at another files_location stays a separate row on purpose — the
     // user merges editions (m4b vs MP3 folder) manually via the org UI. The conflict
     // target only guards re-inserting this exact folder+title (e.g. rescan races).
+    // ON CONFLICT target stays (files_location, title), not widened to include
+    // library_id: db::libraries::validate_no_path_overlap rejects any library path
+    // that's nested under/an ancestor of another's at create/update time, so two
+    // libraries can no longer produce the same files_location for the same folder —
+    // widening the unique index (a SQLite table rebuild) isn't needed to prevent the
+    // cross-library misattribution that would otherwise be possible here.
     let id = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO audiobooks (author, series, title, files_location, cover_art, narrated_by, user_locked, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO audiobooks (author, series, title, files_location, cover_art, narrated_by, user_locked, library_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT(files_location, title) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
         RETURNING id
         "#,
@@ -262,6 +279,7 @@ async fn resolve_book_id(
     .bind(&group.cover_art)
     .bind(&group.narrated_by)
     .bind(lock_book)
+    .bind(library_id)
     .fetch_one(&mut *conn)
     .await?;
 
@@ -330,14 +348,21 @@ WHERE audiobooks.id = totals.book_id;
 }
 
 // Moved/removed files on disk: current known file_path -> files.id, so scan_files can
-// diff disk paths against it (skip re-probing, detect deletions).
-pub async fn fetch_known_file_paths(db: &Pool<Sqlite>) -> Result<HashMap<String, i64>, ApiError> {
+// diff disk paths against it (skip re-probing, detect deletions). Scoped to one
+// library's books so scanning library A never treats library B's files as removed.
+pub async fn fetch_known_file_paths(
+    db: &Pool<Sqlite>,
+    library_id: i64,
+) -> Result<HashMap<String, i64>, ApiError> {
     let rows = sqlx::query_as::<_, FileScanCacheFilePaths>(
         r#"
-        SELECT id, file_path
-        FROM files
+        SELECT f.id, f.file_path
+        FROM files f
+        JOIN audiobooks b ON b.id = f.book_id
+        WHERE b.library_id = ?1
         "#,
     )
+    .bind(library_id)
     .fetch_all(db)
     .await?;
 
@@ -390,13 +415,16 @@ pub async fn delete_removed_files(db: &Pool<Sqlite>, delete_ids: &[i64]) -> Resu
 
 pub async fn get_grouped_files(
     db: &Pool<Sqlite>,
+    library_id: Option<i64>,
 ) -> Result<HashMap<String, HashMap<String, Vec<FileInfo>>>, ApiError> {
     let rows = sqlx::query_as::<_, FileInfo>(
         r#"
             SELECT f.id as id, b.id as book_id, b.author, f.file_name, b.series, b.title, b.files_location as path_parent, f.file_path
-            FROM files f JOIN audiobooks b ON f.book_id = b.id;
+            FROM files f JOIN audiobooks b ON f.book_id = b.id
+            WHERE ?1 IS NULL OR b.library_id = ?1
         "#
     )
+    .bind(library_id)
     .fetch_all(db)
     .await?;
 
@@ -468,25 +496,34 @@ async fn resolve_or_create_dest_book(
     let dest_author = new_author.clone().unwrap_or_default();
     let dest_series = new_series.clone().unwrap_or_default();
 
-    // files_location for the new book = parent dir of one of the moved
-    // files' current path (cover art is left to cover_links).
-    let file_path: Option<String> = match file_ids.first() {
-        Some(id) => sqlx::query_scalar("SELECT file_path FROM files WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?,
+    // files_location for the new book = parent dir of one of the moved files'
+    // current path (cover art is left to cover_links). This is a reorganization of
+    // already-scanned files, never a cross-library move, so the new book inherits
+    // the moved file's current book's library_id.
+    let file_info: Option<(String, Option<i64>)> = match file_ids.first() {
+        Some(id) => sqlx::query_as(
+            r#"
+            SELECT f.file_path, b.library_id
+            FROM files f JOIN audiobooks b ON b.id = f.book_id
+            WHERE f.id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?,
         None => None,
     };
-    let files_location = file_path
-        .as_deref()
-        .and_then(|p| std::path::Path::new(p).parent())
+    let files_location = file_info
+        .as_ref()
+        .and_then(|(p, _)| std::path::Path::new(p).parent())
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
+    let library_id = file_info.and_then(|(_, lib_id)| lib_id);
 
     let id = sqlx::query_scalar::<_, i64>(
         r#"
-        INSERT INTO audiobooks (author, series, title, files_location, user_locked, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        INSERT INTO audiobooks (author, series, title, files_location, user_locked, library_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT(files_location, title) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
         RETURNING id
         "#,
@@ -495,6 +532,7 @@ async fn resolve_or_create_dest_book(
     .bind(&dest_series)
     .bind(&dest_series)
     .bind(&files_location)
+    .bind(library_id)
     .fetch_one(pool)
     .await?;
 
@@ -562,10 +600,12 @@ pub async fn save_user_file_org_changes(
             ChangeType::MergeTitle => {
                 if let Some(requested_book_id) = change.new_book_id {
                     if requested_book_id < 0
-                        && (change.new_author.is_none() || change.new_series.is_none())
+                        && (change.new_author.is_none()
+                            || change.new_series.is_none()
+                            || change.file_ids.is_empty())
                     {
                         tracing::warn!(
-                            "Skipping invalid MergeTitle change (missing author/series for new book): {:?}",
+                            "Skipping invalid MergeTitle change (missing author/series/file_ids for new book): {:?}",
                             change.file_ids
                         );
                         continue;
@@ -681,6 +721,10 @@ mod tests {
             .await
             .unwrap();
         sqlx::migrate!().run(&pool).await.unwrap();
+        sqlx::query("INSERT INTO libraries (id, name, path) VALUES (1, 'Default', 'data')")
+            .execute(&pool)
+            .await
+            .unwrap();
         pool
     }
 
@@ -706,7 +750,7 @@ mod tests {
     }
 
     async fn run_sync(pool: &SqlitePool, rows: &[FileScanCache]) {
-        group_and_attach_files(pool, rows).await.unwrap();
+        group_and_attach_files(pool, 1, rows).await.unwrap();
     }
 
     async fn book_count(pool: &SqlitePool) -> i64 {

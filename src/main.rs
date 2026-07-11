@@ -6,6 +6,7 @@ mod models;
 mod services;
 use crate::{
     config::Config,
+    services::scan_guard::ScanGuard,
     services::startup::{init_logging, scan_files_startup, shutdown_signal},
 };
 use axum::{
@@ -13,7 +14,7 @@ use axum::{
     http::{self, Method, Request},
 };
 use dotenv::dotenv;
-use services::startup::ensure_admin_user;
+use services::startup::{ensure_admin_user, ensure_default_library};
 use sqlx::SqlitePool;
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::cors::CorsLayer;
@@ -30,8 +31,9 @@ pub struct AppState {
     pub config: Arc<Config>,
     // Guards the bulk metadata backfill: one pass at a time across manual + post-scan triggers.
     pub backfill_running: Arc<std::sync::atomic::AtomicBool>,
-    // Guards a full library scan: one pass at a time across manual/upload/lazy triggers.
-    pub scan_running: Arc<std::sync::atomic::AtomicBool>,
+    // Guards scan triggers (manual/upload/lazy/per-library): serializes a full scan
+    // against any per-library scan, but allows different libraries to scan concurrently.
+    pub scan_guard: Arc<ScanGuard>,
     pub rate_limiter: Arc<api::rate_limit::LoginRateLimiter>,
 }
 
@@ -46,13 +48,16 @@ async fn main() -> anyhow::Result<()> {
         .expect("Err connecting to database");
 
     ensure_admin_user(&db_pool).await.unwrap();
+    ensure_default_library(&db_pool, &config.audiobook_location)
+        .await
+        .unwrap();
     let _ = scan_files_startup(&config.audiobook_location, &db_pool).await;
 
     let state = AppState {
         db_pool: db_pool,
         config: Arc::clone(&config),
         backfill_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        scan_guard: Arc::new(ScanGuard::new()),
         rate_limiter: Arc::new(api::rate_limit::LoginRateLimiter::new()),
     };
 
