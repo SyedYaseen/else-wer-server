@@ -7,6 +7,7 @@ export interface ProgressUpdate {
   file_id: number;
   progress_ms: number;
   complete: boolean;
+  listened_delta_ms?: number;
 }
 
 export async function getBookProgress(bookId: number): Promise<Progress[]> {

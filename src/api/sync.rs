@@ -1,6 +1,7 @@
 use crate::{
     AppState,
     api::{api_error::ApiError, auth_extractor::AuthUser},
+    db::stats::{add_listened_ms, is_book_fully_complete, record_finish_transition, sanitize_delta},
     db::sync::{
         get_progress_by_bookid, get_progress_by_fileid, list_inprogress_db, upsert_progress,
     },
@@ -13,6 +14,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use chrono::Utc;
 
 pub async fn list_inprogress(
     State(state): State<AppState>,
@@ -63,6 +65,10 @@ pub async fn update_progress(
 ) -> Result<impl IntoResponse, ApiError> {
     tracing::debug!("Incoming update payload: {:#?}", payload);
 
+    let was_complete_before = is_book_fully_complete(&state.db_pool, claims.sub, payload.book_id)
+        .await
+        .unwrap_or(false);
+
     upsert_progress(&state.db_pool, claims.sub, &payload)
         .await
         .map_err(|e| {
@@ -76,5 +82,26 @@ pub async fn update_progress(
         })?;
 
     tracing::debug!("Upsert succeeded");
+
+    // Best-effort: stats/finish tracking never fails the progress save itself.
+    if let Some(delta) = payload.listened_delta_ms.and_then(sanitize_delta) {
+        let today = Utc::now().date_naive();
+        if let Err(e) = add_listened_ms(&state.db_pool, claims.sub, payload.book_id, today, delta).await {
+            tracing::error!("Failed to record listening stats: {e}");
+        }
+    }
+
+    if !was_complete_before {
+        match is_book_fully_complete(&state.db_pool, claims.sub, payload.book_id).await {
+            Ok(true) => {
+                if let Err(e) = record_finish_transition(&state.db_pool, claims.sub, payload.book_id).await {
+                    tracing::error!("Failed to record finish transition: {e}");
+                }
+            }
+            Ok(false) => {}
+            Err(e) => tracing::error!("Failed to check book completion: {e}"),
+        }
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,6 +1,7 @@
 pub mod audiobooks;
 pub mod meta_scan;
 pub mod series;
+pub mod stats;
 pub mod sync;
 pub mod user;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};

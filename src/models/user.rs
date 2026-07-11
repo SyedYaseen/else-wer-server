@@ -82,6 +82,11 @@ pub struct ProgressUpdate {
     pub file_id: i64,
     pub progress_ms: i64,
     pub complete: bool,
+    // Wall-clock ms listened since the last save, computed client-side. Sanity-checked
+    // server-side (src/db/stats.rs::sanitize_delta) before being folded into the daily
+    // listening-stats aggregate.
+    #[serde(default)]
+    pub listened_delta_ms: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

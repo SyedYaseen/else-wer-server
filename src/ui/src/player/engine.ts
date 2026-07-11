@@ -31,11 +31,36 @@ function isNearEnd(currentSec: number, durationSec: number) {
   return durationSec > 0 && currentSec > durationSec - COMPLETION_THRESHOLD_SEC;
 }
 
+// Wall-clock (not currentTime-diff) tracking of listened time since the last save:
+// immune to seeks by construction, since seeking changes currentTime without
+// advancing the clock while playing. null baseline means "don't count the next tick"
+// (fresh file/book load).
+let lastSaveWallClockMs: number | null = null;
+let accumulatedListenedMs = 0;
+
+function trackListenedTime() {
+  const now = performance.now();
+  if (lastSaveWallClockMs !== null && !audio.paused) {
+    // Cap each tick's contribution so one huge performance.now() jump (tab
+    // suspend/debugger pause) can't inflate the accumulator; server also caps.
+    accumulatedListenedMs += Math.min(now - lastSaveWallClockMs, PERIODIC_SAVE_SEC * 1000 * 2);
+  }
+  lastSaveWallClockMs = now;
+}
+
 function saveProgress(complete: boolean) {
   const { book, files, index, currentTime } = usePlayerStore.getState();
   const file = files[index];
   if (!book || !file) return;
-  const payload = { book_id: book.id, file_id: file.id, progress_ms: Math.floor(currentTime * 1000), complete };
+  const listened_delta_ms = accumulatedListenedMs > 0 ? Math.round(accumulatedListenedMs) : undefined;
+  accumulatedListenedMs = 0;
+  const payload = {
+    book_id: book.id,
+    file_id: file.id,
+    progress_ms: Math.floor(currentTime * 1000),
+    complete,
+    ...(listened_delta_ms !== undefined ? { listened_delta_ms } : {}),
+  };
   updateProgress(payload).catch((e) => console.error('progress save failed', e));
   saveLocalProgress({ id: 0, user_id: 0, ...payload, updated_at: new Date().toISOString() });
 }
@@ -64,6 +89,8 @@ function loadFile(index: number, startSec: number, autoplay: boolean) {
   const file = files[index];
   if (!file) return;
   lastSavedSec = -1;
+  lastSaveWallClockMs = null;
+  accumulatedListenedMs = 0;
   usePlayerStore.getState().setIndex(index);
   const seq = ++loadSeq;
   // Prefer a downloaded local copy outright instead of waiting for a network
@@ -156,6 +183,7 @@ function advance() {
 }
 
 audio.addEventListener('timeupdate', () => {
+  trackListenedTime();
   usePlayerStore.getState().setTime(audio.currentTime, audio.duration || 0);
   const sec = Math.floor(audio.currentTime);
   if (sec > 0 && sec % PERIODIC_SAVE_SEC === 0 && sec !== lastSavedSec) {

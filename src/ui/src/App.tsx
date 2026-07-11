@@ -10,6 +10,7 @@ import { PlayerPage } from './routes/PlayerPage';
 import { OrganizePage } from './routes/OrganizePage';
 import { UserManagementPage } from './routes/UserManagementPage';
 import { SettingsPage } from './routes/SettingsPage';
+import { StatsPage } from './routes/StatsPage';
 import { PlayerRoot } from './components/player/PlayerRoot';
 import { InstallBanner } from './components/ui/InstallBanner';
 import { NetworkBanner } from './components/ui/NetworkBanner';
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/book/:id" element={<BookDetailPage />} />
             <Route path="/player/:id" element={<PlayerPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/stats" element={<StatsPage />} />
             <Route element={<RequireOrganize />}>
               <Route path="/organize" element={<OrganizePage />} />
             </Route>

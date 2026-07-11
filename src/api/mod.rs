@@ -12,6 +12,7 @@ mod auth_extractor;
 mod match_meta;
 mod middleware;
 pub mod rate_limit;
+mod stats;
 mod sync;
 pub mod user;
 use crate::{
@@ -23,6 +24,7 @@ use crate::{
             stream_file, upload_handler,
         },
         match_meta::{apply_book_match, assign_series, backfill_metadata, match_book_candidates},
+        stats::{get_daily_stats, get_finished_books},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
         user::{
             change_password, create_user, delete_user, list_users, login,
@@ -70,6 +72,9 @@ pub async fn routes() -> Router<AppState> {
         )
         .route("/get_book_progress/{book_id}", get(get_book_progress))
         .route("/update_progress", post(update_progress))
+        // Stats
+        .route("/stats/daily", get(get_daily_stats))
+        .route("/stats/finished", get(get_finished_books))
         // User
         .route("/create_user", post(create_user))
         .route("/list_users", get(list_users))

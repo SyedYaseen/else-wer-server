@@ -93,6 +93,13 @@ export function SettingsPage() {
         </button>
       </Card>
 
+      <h2 className="settings-section-title">Stats</h2>
+      <Card>
+        <button className="settings-account-row" onClick={() => navigate('/stats')}>
+          Listening stats
+        </button>
+      </Card>
+
       <h2 className="settings-section-title">Downloads</h2>
       {downloads === null && <div className="settings-state">Loading downloads…</div>}
       {downloads?.length === 0 && <div className="settings-state">No downloaded books</div>}
