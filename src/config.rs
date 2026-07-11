@@ -11,6 +11,7 @@ pub struct Config {
     pub jwt_loc: String,
     pub relay_uri: String,
     pub pwa_dist_location: String,
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl Config {
@@ -33,6 +34,14 @@ impl Config {
             relay_uri: env::var("RELAY_URI").unwrap_or("http://localhost:9000/api".to_string()),
             pwa_dist_location: env::var("PWA_DIST_LOCATION")
                 .unwrap_or_else(|_| "src/ui/dist".to_string()),
+            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .map(|s| {
+                    s.split(',')
+                        .map(|o| o.trim().to_string())
+                        .filter(|o| !o.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }

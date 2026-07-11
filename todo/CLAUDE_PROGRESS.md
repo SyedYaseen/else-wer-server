@@ -6,6 +6,8 @@
   - Unified file serving /api/stream (open): L102
   - Metadata reconcile (open): L103
   - Lightweight web PWA / Organize: L104
+  - Business/GA audit (2026-07-11): split into todo/6_SECURITY_HARDENING.md,
+    todo/7_OSS_RELEASE_DOCS.md, todo/8_FRONTEND_TESTING.md, todo/9_FEATURE_GAPS.md
 - Done: L106
   - Organize author/book move+merge: L107
   - Manual chapter reordering: L121
@@ -165,9 +167,9 @@ per project convention (user reviews before commit).
 - [x] Phase 4 - Swallowed errors & minor cleanup (silent org-save failure, batch abort, debug artifact write, blocking fs call, println->tracing)
 
 ## Todo - Deferred
-- Whether /scan_files, /list_scanned_files, /save_organized_files, /upload should require AdminUser instead of AuthUser (Phase 1 item 5) - needs user's call, not changed without confirmation.
-- Dead `salt` column on users table (Phase 4 item 6) - flagged only, no DB migration planned.
+(none - both prior items resolved 2026-07-11 in todo/6_SECURITY_HARDENING.md: OrganizeUser gating
+was already correct in code; salt column removed via migration 0003.)
 
-## Todo - out of scope
-- Rate limiting on /login
-- CORS allow_origin(Any) in src/main.rs
+## Todo - out of scope (superseded for GA, resolved 2026-07-11 - see todo/6_SECURITY_HARDENING.md)
+- ~~Rate limiting on /login~~ - done (in-memory per-ip+username lockout)
+- ~~CORS allow_origin(Any) in src/main.rs~~ - done (env-configurable allowlist, empty by default)

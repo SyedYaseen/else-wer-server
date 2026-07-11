@@ -4,7 +4,21 @@ use axum::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 
-use crate::{AppState, api::api_error::ApiError, models::user::Claims};
+use crate::{AppState, api::api_error::ApiError, db::user::get_token_version, models::user::Claims};
+
+/// Rejects a decoded token whose `token_version` no longer matches the user's
+/// current one in the DB — i.e. a token issued before a password change.
+async fn verify_token_version(app_state: &AppState, claims: &Claims) -> Result<(), ApiError> {
+    let current = get_token_version(&app_state.db_pool, claims.sub)
+        .await?
+        .ok_or_else(|| ApiError::Unauthorized("Invalid token".into()))?;
+
+    if current != claims.token_version {
+        return Err(ApiError::Unauthorized("Token revoked".into()));
+    }
+
+    Ok(())
+}
 
 pub struct AuthUser(pub Claims);
 
@@ -36,6 +50,8 @@ where
             &Validation::new(Algorithm::HS256),
         )
         .map_err(|_| ApiError::Unauthorized("Invalid token".into()))?;
+
+        verify_token_version(&app_state, &token_data.claims).await?;
 
         Ok(AuthUser(token_data.claims))
     }
@@ -82,6 +98,8 @@ where
             &Validation::new(Algorithm::HS256),
         )
         .map_err(|_| ApiError::Unauthorized("Invalid token".into()))?;
+
+        verify_token_version(&app_state, &token_data.claims).await?;
 
         Ok(StreamAuth(token_data.claims))
     }

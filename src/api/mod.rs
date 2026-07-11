@@ -11,6 +11,7 @@ mod audiobooks;
 mod auth_extractor;
 mod match_meta;
 mod middleware;
+pub mod rate_limit;
 mod sync;
 pub mod user;
 use crate::{

@@ -25,6 +25,9 @@ pub enum ApiError {
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
+
     #[error("JWT error")]
     JwtErr(#[from] jsonwebtoken::errors::Error),
 
@@ -73,6 +76,7 @@ impl IntoResponse for ApiError {
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
+            ApiError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             ApiError::JwtErr(_) => (
                 StatusCode::UNAUTHORIZED,
                 "Invalid or expired token".to_string(),

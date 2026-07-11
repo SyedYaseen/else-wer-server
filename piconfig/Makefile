@@ -1,5 +1,4 @@
 # Deploy else-wer-server (including its src/ui PWA) to the Pi Zero 2 (192.168.1.10, host alias `pi`).
-# See cmd.md for the original manual steps this replaces.
 #
 # One-time setup on a fresh Pi:
 #   make install-unit   # installs the systemd unit (else-wer.service in this dir)

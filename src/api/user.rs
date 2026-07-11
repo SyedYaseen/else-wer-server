@@ -62,7 +62,7 @@ pub async fn change_password(
         .hash_password(payload.new_password.as_bytes(), &salt)?
         .to_string();
 
-    user::update_user_password(db, target.id, &password_hash, &salt.to_string()).await?;
+    user::update_user_password(db, target.id, &password_hash).await?;
 
     Ok((
         StatusCode::OK,
@@ -158,7 +158,6 @@ pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, Ap
         &user.username,
         &user.is_admin,
         &password_hash,
-        &salt.to_string(),
         &user.can_organize,
     )
     .await?;
@@ -169,14 +168,27 @@ pub async fn save_pwd_hash(user: &UserDto, db: &Pool<Sqlite>) -> Result<User, Ap
 // login
 pub async fn login(
     State(state): State<AppState>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     Json(payload): Json<LoginDto>,
 ) -> Result<impl IntoResponse, ApiError> {
     let db: &Pool<Sqlite> = &state.db_pool;
     let config = &state.config;
+    let rate_key = format!("{}:{}", addr.ip(), payload.username);
+    state.rate_limiter.check(&rate_key)?;
+
     let mut token: String = "".to_string();
     if config.self_hosted {
         let jwt = config.jwt_secret.as_bytes();
-        token = auth_and_issue_jwt(&payload, db, jwt).await?;
+        match auth_and_issue_jwt(&payload, db, jwt).await {
+            Ok(t) => {
+                state.rate_limiter.record_success(&rate_key);
+                token = t;
+            }
+            Err(e) => {
+                state.rate_limiter.record_failure(&rate_key);
+                return Err(e);
+            }
+        }
     } else {
         token = get_relay_token(state.clone(), &payload).await?;
         let token_path = Path::new(&config.jwt_loc).parent();
@@ -218,6 +230,7 @@ async fn auth_and_issue_jwt(
         iat: now.timestamp() as usize,
         exp: exp.timestamp() as usize,
         can_organize: user.can_organize,
+        token_version: user.token_version,
     };
 
     let token = encode(

@@ -16,8 +16,6 @@ internet**:
   cert, and reverse-proxies to the else-wer server on port 3000.
 
 ## Setup (once, ~5 minutes)
-<!-- valvasban.duckdns.org token:
-      82a72c4d-436e-4500-acbe-649d27e721b8-->
 1. Sign in at https://www.duckdns.org (Google/GitHub login), create a
    subdomain, and copy your **token** from the top of the page.
 2. On the server box:

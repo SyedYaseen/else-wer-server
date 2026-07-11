@@ -16,7 +16,7 @@ use dotenv::dotenv;
 use services::startup::ensure_admin_user;
 use sqlx::SqlitePool;
 use std::{net::SocketAddr, sync::Arc};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
@@ -32,6 +32,7 @@ pub struct AppState {
     pub backfill_running: Arc<std::sync::atomic::AtomicBool>,
     // Guards a full library scan: one pass at a time across manual/upload/lazy triggers.
     pub scan_running: Arc<std::sync::atomic::AtomicBool>,
+    pub rate_limiter: Arc<api::rate_limit::LoginRateLimiter>,
 }
 
 #[tokio::main]
@@ -52,11 +53,20 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::clone(&config),
         backfill_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        rate_limiter: Arc::new(api::rate_limit::LoginRateLimiter::new()),
     };
 
+    // Empty by default: same-origin requests from the embedded PWA don't need CORS
+    // headers at all, so an empty allowlist means no cross-origin site can replay a
+    // stolen bearer token. Set CORS_ALLOWED_ORIGINS only when the frontend is served
+    // from a different origin (e.g. a separate app/site domain).
+    let allowed_origins: Vec<http::HeaderValue> = config
+        .cors_allowed_origins
+        .iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
     let cors = CorsLayer::new()
-        // .allow_origin("http://localhost:3001".parse::<HeaderValue>().unwrap())
-        .allow_origin(Any) // allows all origins
+        .allow_origin(allowed_origins)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([http::header::CONTENT_TYPE, http::header::AUTHORIZATION]);
     // Serves the src/ui static build (same-origin) at every path not under
@@ -128,10 +138,13 @@ async fn main() -> anyhow::Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("HOST '{}' resolved to no address", config.host))?;
     info!(%addr, "listening");
-    axum::serve(tokio::net::TcpListener::bind(addr).await.unwrap(), app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+    axum::serve(
+        tokio::net::TcpListener::bind(addr).await.unwrap(),
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .unwrap();
 
     Ok(())
 }

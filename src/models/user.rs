@@ -29,8 +29,8 @@ pub struct User {
     pub username: String,
     pub is_admin: bool,
     pub password_hash: String,
-    pub salt: String,
     pub can_organize: bool,
+    pub token_version: i64,
 }
 
 /// Public-facing user shape for the admin dashboard — never leaks password_hash/salt.
@@ -95,4 +95,10 @@ pub struct Claims {
     // the safe default) instead of failing auth outright.
     #[serde(default)]
     pub can_organize: bool,
+    // Compared against the user's current token_version in the DB on every request;
+    // a mismatch means the token was issued before a password change and is revoked.
+    // Defaulted to 0 so pre-existing tokens (issued before this field existed) still
+    // decode and match a freshly-migrated user row (which also defaults to 0).
+    #[serde(default)]
+    pub token_version: i64,
 }
