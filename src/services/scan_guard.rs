@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Serializes scan triggers (manual/upload/lazy/per-library) so they don't race each
 /// other, while allowing genuinely independent work to proceed concurrently: two
@@ -23,35 +23,56 @@ impl ScanGuard {
         }))
     }
 
-    pub fn try_start_full(&self) -> bool {
+    /// Returns a guard that releases the full-scan lock on `Drop`. Move this into
+    /// whatever task actually performs the scan (see callers) rather than dropping it
+    /// at the end of the handler's stack frame: the guard must outlive the HTTP
+    /// request so a client disconnect can't release the lock while the real scan
+    /// work is still running in the background.
+    pub fn try_start_full(self: &Arc<Self>) -> Option<FullScanGuard> {
         let mut state = self.0.lock().unwrap();
         if state.full_scan_running || !state.scanning_libraries.is_empty() {
-            return false;
+            return None;
         }
         state.full_scan_running = true;
-        true
+        Some(FullScanGuard(Arc::clone(self)))
     }
 
-    pub fn finish_full(&self) {
-        self.0.lock().unwrap().full_scan_running = false;
-    }
-
-    pub fn try_start_library(&self, library_id: i64) -> bool {
+    /// See [`ScanGuard::try_start_full`] for why the returned guard must be moved
+    /// into the scan's own task rather than scoped to the request handler.
+    pub fn try_start_library(self: &Arc<Self>, library_id: i64) -> Option<LibraryScanGuard> {
         let mut state = self.0.lock().unwrap();
         if state.full_scan_running || state.scanning_libraries.contains(&library_id) {
-            return false;
+            return None;
         }
         state.scanning_libraries.insert(library_id);
-        true
-    }
-
-    pub fn finish_library(&self, library_id: i64) {
-        self.0.lock().unwrap().scanning_libraries.remove(&library_id);
+        Some(LibraryScanGuard {
+            guard: Arc::clone(self),
+            library_id,
+        })
     }
 }
 
 impl Default for ScanGuard {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct FullScanGuard(Arc<ScanGuard>);
+
+impl Drop for FullScanGuard {
+    fn drop(&mut self) {
+        self.0.0.lock().unwrap().full_scan_running = false;
+    }
+}
+
+pub struct LibraryScanGuard {
+    guard: Arc<ScanGuard>,
+    library_id: i64,
+}
+
+impl Drop for LibraryScanGuard {
+    fn drop(&mut self) {
+        self.guard.0.lock().unwrap().scanning_libraries.remove(&self.library_id);
     }
 }

@@ -180,10 +180,20 @@ pub async fn upload_handler(
         tracing::info!("File saved to {final_path}");
 
         let mut count = 0u64;
-        if state.scan_guard.try_start_library(library.id) {
-            let result = scan_files(library.id, &library.path, db).await;
-            state.scan_guard.finish_library(library.id);
-            count = result?;
+        if let Some(guard) = state.scan_guard.try_start_library(library.id) {
+            // Spawned so the scan (and the guard held by the task) outlives
+            // this request: if the client disconnects, only our `.await`
+            // below is dropped, not the scan itself, so the lock can't be
+            // released before the real work is done.
+            let library_id = library.id;
+            let library_path = library.path.clone();
+            let db_owned = db.clone();
+            count = tokio::spawn(async move {
+                let result = scan_files(library_id, &library_path, &db_owned).await;
+                drop(guard);
+                result
+            })
+            .await??;
             cover_links(db).await?;
             // Fire-and-forget: fills missing cover/description/series from Audible (1.5s/book).
             try_spawn_metadata_backfill(state.clone());
@@ -216,18 +226,26 @@ pub async fn scan_files_handler(
     State(state): State<AppState>,
     OrganizeUser(_claims): OrganizeUser,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !state.scan_guard.try_start_full() {
+    let Some(guard) = state.scan_guard.try_start_full() else {
         return Ok((
             StatusCode::CONFLICT,
             Json(json!({ "message": "A scan is already running" })),
         ));
-    }
+    };
 
     let db = &state.db_pool;
 
-    let result = scan_all_libraries(db).await;
-    state.scan_guard.finish_full();
-    let files_count = result?;
+    // Spawned so the scan (and the guard held by the task) outlives this
+    // request: if the client disconnects, only our `.await` below is
+    // dropped, not the scan itself, so the lock can't be released before
+    // the real work is done.
+    let db_owned = db.clone();
+    let files_count = tokio::spawn(async move {
+        let result = scan_all_libraries(&db_owned).await;
+        drop(guard);
+        result
+    })
+    .await??;
 
     cover_links(db).await?;
     // Fire-and-forget: fills missing cover/description/series from Audible (1.5s/book).
@@ -261,29 +279,41 @@ pub async fn list_scanned_files_handler(
         // instead of a full re-scan of every library.
         let result = match params.library_id {
             Some(id) => {
-                if !state.scan_guard.try_start_library(id) {
+                let Some(guard) = state.scan_guard.try_start_library(id) else {
                     return Ok((
                         StatusCode::CONFLICT,
                         Json(json!({ "message": "A scan is already running" })),
                     ));
-                }
-                let result = match get_library(db, id).await {
-                    Ok(library) => scan_files(library.id, &library.path, db).await,
-                    Err(e) => Err(e),
                 };
-                state.scan_guard.finish_library(id);
-                result
+                // Spawned so the scan (and the guard held by the task)
+                // outlives this request: if the client disconnects, only our
+                // `.await` below is dropped, not the scan itself, so the
+                // lock can't be released before the real work is done.
+                let db_owned = db.clone();
+                tokio::spawn(async move {
+                    let result = match get_library(&db_owned, id).await {
+                        Ok(library) => scan_files(library.id, &library.path, &db_owned).await,
+                        Err(e) => Err(e),
+                    };
+                    drop(guard);
+                    result
+                })
+                .await?
             }
             None => {
-                if !state.scan_guard.try_start_full() {
+                let Some(guard) = state.scan_guard.try_start_full() else {
                     return Ok((
                         StatusCode::CONFLICT,
                         Json(json!({ "message": "A scan is already running" })),
                     ));
-                }
-                let result = scan_all_libraries(db).await;
-                state.scan_guard.finish_full();
-                result
+                };
+                let db_owned = db.clone();
+                tokio::spawn(async move {
+                    let result = scan_all_libraries(&db_owned).await;
+                    drop(guard);
+                    result
+                })
+                .await?
             }
         };
         result?;

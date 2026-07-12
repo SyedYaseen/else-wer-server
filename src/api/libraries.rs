@@ -67,16 +67,24 @@ pub async fn scan_library_handler(
     let db = &state.db_pool;
     let library = get_library(db, id).await?;
 
-    if !state.scan_guard.try_start_library(id) {
+    let Some(guard) = state.scan_guard.try_start_library(id) else {
         return Ok((
             StatusCode::CONFLICT,
             Json(serde_json::json!({ "message": "A scan is already running" })),
         ));
-    }
+    };
 
-    let result = scan_files(library.id, &library.path, db).await;
-    state.scan_guard.finish_library(id);
-    let files_scanned = result?;
+    // Spawned so the scan (and the guard held by the task) outlives this
+    // request: if the client disconnects, only our `.await` below is dropped,
+    // not the scan itself, so the lock can't be released before the real
+    // work is done.
+    let db_owned = db.clone();
+    let files_scanned = tokio::spawn(async move {
+        let result = scan_files(library.id, &library.path, &db_owned).await;
+        drop(guard);
+        result
+    })
+    .await??;
 
     cover_links(db).await?;
     // Fire-and-forget: fills missing cover/description/series from Audible (1.5s/book).
