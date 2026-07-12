@@ -90,7 +90,7 @@ jobs:
 
           1. Set env vars (see .env.docker.example in the source repo for the full reference):
                JWT_SECRET     required, no default
-               DATABASE_URL   default sqlite:./rustybookshelf.db
+               DATABASE_URL   default sqlite:./else-wer.db
                AUDIOBOOKS_LOCATION  default ./data
                PWA_DIST_LOCATION    set this to ./pwa - the packaged default (src/ui/dist) won't
                                     resolve outside a source checkout

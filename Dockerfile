@@ -32,7 +32,7 @@ COPY --from=pwa-build /pwa/dist ./src/ui/dist
 
 ENV HOST=0.0.0.0 \
     PORT=3000 \
-    DATABASE_URL=sqlite:/data/rustybookshelf.db \
+    DATABASE_URL=sqlite:/data/else-wer.db \
     AUDIOBOOKS_LOCATION=/audiobooks \
     JWT_LOC=/data/creds/jwt.key \
     PWA_DIST_LOCATION=/app/src/ui/dist \

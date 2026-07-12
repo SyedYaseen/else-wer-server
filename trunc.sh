@@ -6,7 +6,7 @@
 
 # DB_PATH="${1:-.sqlite.db}"
 
-DB_PATH="/home/loop/p/else-wer/else-wer-server/rustybookshelf.db"
+DB_PATH="/home/loop/p/else-wer/else-wer-server/else-wer.db"
 if [ ! -f "$DB_PATH" ]; then
     echo "Error: Database file not found: $DB_PATH"
     exit 1
