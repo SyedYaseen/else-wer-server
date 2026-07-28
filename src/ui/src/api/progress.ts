@@ -8,6 +8,10 @@ export interface ProgressUpdate {
   progress_ms: number;
   complete: boolean;
   listened_delta_ms?: number;
+  // Client wall-clock save time (ISO). The server's upsert uses it as a
+  // last-write-wins guard so a replayed offline save can't overwrite newer
+  // progress another device wrote in the meantime.
+  updated_at?: string;
 }
 
 export async function getBookProgress(bookId: number): Promise<Progress[]> {

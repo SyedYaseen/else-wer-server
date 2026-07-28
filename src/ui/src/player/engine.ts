@@ -48,21 +48,29 @@ function trackListenedTime() {
   lastSaveWallClockMs = now;
 }
 
+export function saveProgressNow(): void {
+  saveProgress(false);
+}
+
 function saveProgress(complete: boolean) {
   const { book, files, index, currentTime } = usePlayerStore.getState();
   const file = files[index];
   if (!book || !file) return;
   const listened_delta_ms = accumulatedListenedMs > 0 ? Math.round(accumulatedListenedMs) : undefined;
   accumulatedListenedMs = 0;
+  // One shared timestamp for both writes, so the localStorage row and the server
+  // row are last-write-wins comparable no matter which side is consulted later.
+  const updated_at = new Date().toISOString();
   const payload = {
     book_id: book.id,
     file_id: file.id,
     progress_ms: Math.floor(currentTime * 1000),
     complete,
+    updated_at,
     ...(listened_delta_ms !== undefined ? { listened_delta_ms } : {}),
   };
   updateProgress(payload).catch((e) => console.error('progress save failed', e));
-  saveLocalProgress({ id: 0, user_id: 0, ...payload, updated_at: new Date().toISOString() });
+  saveLocalProgress({ id: 0, user_id: 0, ...payload });
 }
 
 function updateMediaSessionMetadata() {
@@ -141,8 +149,19 @@ export function loadBook(book: AudioBookRow, files: FileMetadata[], resume: Resu
   loadFile(resume.index, resume.startSec, true);
 }
 
+const RESUME_REWIND_SEC = 5;
+
+// Rewinds a few seconds before resuming from a pause, to reorient the listener —
+// used by every resume path (in-app toggle, lock-screen/Bluetooth), but not by
+// fresh file loads or explicit seeks/skips.
+function resumeAudio() {
+  if (!audio.paused) return;
+  audio.currentTime = Math.max(0, audio.currentTime - RESUME_REWIND_SEC);
+  audio.play().catch((e) => console.error('play failed', e));
+}
+
 export function togglePlay() {
-  if (audio.paused) audio.play().catch((e) => console.error('play failed', e));
+  if (audio.paused) resumeAudio();
   else audio.pause();
 }
 
@@ -150,12 +169,16 @@ export function seek(sec: number) {
   const wasPlaying = !audio.paused;
   audio.currentTime = sec;
   if (wasPlaying) audio.play().catch((e) => console.error('play failed', e));
+  lastSavedSec = Math.floor(audio.currentTime);
+  saveProgress(isNearEnd(audio.currentTime, audio.duration || 0));
 }
 
 export function skip(deltaSec: number) {
   const d = audio.duration || 0;
   const target = audio.currentTime + deltaSec;
   audio.currentTime = d > 0 ? Math.min(Math.max(target, 0), d) : Math.max(target, 0);
+  lastSavedSec = Math.floor(audio.currentTime);
+  saveProgress(isNearEnd(audio.currentTime, audio.duration || 0));
 }
 
 export function setRate(rate: number) {
@@ -168,6 +191,10 @@ export function switchToFile(index: number) {
   if (index === currentIndex || !files[index]) return;
   saveProgress(false);
   loadFile(index, 0, true);
+  // Immediately register the new file as the most-recently-touched one (loadFile
+  // synchronously resets currentTime to 0 via setIndex before its async offline-blob
+  // lookup resolves), so a chapter jump isn't lost if the next save trigger never fires.
+  saveProgress(false);
 }
 
 function advance() {
@@ -194,9 +221,13 @@ audio.addEventListener('timeupdate', () => {
 audio.addEventListener('loadedmetadata', () => {
   usePlayerStore.getState().setTime(audio.currentTime, audio.duration || 0);
 });
-audio.addEventListener('play', () => usePlayerStore.getState().setPlaying(true));
+audio.addEventListener('play', () => {
+  usePlayerStore.getState().setPlaying(true);
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+});
 audio.addEventListener('pause', () => {
   usePlayerStore.getState().setPlaying(false);
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   saveProgress(isNearEnd(audio.currentTime, audio.duration || 0));
 });
 audio.addEventListener('error', () => {
@@ -221,10 +252,10 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('play', () => audio.play().catch(() => {}));
+  navigator.mediaSession.setActionHandler('play', () => resumeAudio());
   navigator.mediaSession.setActionHandler('pause', () => audio.pause());
-  navigator.mediaSession.setActionHandler('seekbackward', () => skip(-30));
-  navigator.mediaSession.setActionHandler('seekforward', () => skip(30));
+  navigator.mediaSession.setActionHandler('seekbackward', () => skip(-usePlayerStore.getState().rewindSec));
+  navigator.mediaSession.setActionHandler('seekforward', () => skip(usePlayerStore.getState().ffwdSec));
   navigator.mediaSession.setActionHandler('previoustrack', () => {
     const { index } = usePlayerStore.getState();
     if (index > 0) switchToFile(index - 1);

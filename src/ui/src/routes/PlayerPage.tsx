@@ -5,7 +5,7 @@ import { usePlayerStore } from '../store/player';
 import { listBooks, fileMetadata, coverUrl } from '../api/books';
 import { getBookProgress } from '../api/progress';
 import { resolveResumePoint, reconcileProgress, getLocalProgress } from '../lib/playerResume';
-import { loadBook, togglePlay, skip } from '../player/engine';
+import { loadBook, togglePlay, skip, saveProgressNow } from '../player/engine';
 import { getOfflineBookData } from '../offline/storage';
 import { Seeker } from '../components/player/Seeker';
 import { PlaybackSpeedMenu } from '../components/player/PlaybackSpeedMenu';
@@ -13,6 +13,8 @@ import { SleepTimerSheet } from '../components/player/SleepTimerSheet';
 import { ChaptersSheet } from '../components/player/ChaptersSheet';
 import { BookmarksSheet } from '../components/player/BookmarksSheet';
 import { PlayIcon, PauseIcon, RewindIcon, ForwardIcon, ChevronDownIcon } from '../components/player/icons';
+import { CheckIcon } from '../components/ui/icons';
+import { showToast } from '../lib/toast';
 import '../components/player/player.css';
 
 async function loadPlayerData(bookId: number) {
@@ -48,6 +50,8 @@ export function PlayerPage() {
   const playing = usePlayerStore((s) => s.playing);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const duration = usePlayerStore((s) => s.duration);
+  const ffwdSec = usePlayerStore((s) => s.ffwdSec);
+  const rewindSec = usePlayerStore((s) => s.rewindSec);
 
   const alreadyLoaded = storeBook?.id === bookId && files.length > 0;
 
@@ -105,9 +109,9 @@ export function PlayerPage() {
       <div className="player-transport">
         <button
           className="player-transport-btn"
-          onClick={() => skip(-30)}
-          aria-label="Back 30 seconds"
-          title="Back 30 seconds"
+          onClick={() => skip(-rewindSec)}
+          aria-label={`Back ${rewindSec} seconds`}
+          title={`Back ${rewindSec} seconds`}
         >
           <RewindIcon size={36} />
         </button>
@@ -121,9 +125,9 @@ export function PlayerPage() {
         </button>
         <button
           className="player-transport-btn"
-          onClick={() => skip(30)}
-          aria-label="Forward 30 seconds"
-          title="Forward 30 seconds"
+          onClick={() => skip(ffwdSec)}
+          aria-label={`Forward ${ffwdSec} seconds`}
+          title={`Forward ${ffwdSec} seconds`}
         >
           <ForwardIcon size={36} />
         </button>
@@ -134,6 +138,17 @@ export function PlayerPage() {
         <SleepTimerSheet />
         <ChaptersSheet />
         <BookmarksSheet />
+        <button
+          className="player-secondary-btn"
+          onClick={() => {
+            saveProgressNow();
+            showToast('Progress saved', 'success');
+          }}
+          aria-label="Save progress"
+          title="Save progress"
+        >
+          <CheckIcon />
+        </button>
       </div>
     </div>
   );

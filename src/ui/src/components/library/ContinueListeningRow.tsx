@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ContinueListeningItem } from '../../lib/continueListening';
 import { coverUrl, fileMetadata } from '../../api/books';
 import { getBookProgress } from '../../api/progress';
-import { resolveResumePoint, getLocalProgress } from '../../lib/playerResume';
+import { resolveResumePoint, reconcileProgress, getLocalProgress } from '../../lib/playerResume';
 import { loadBook } from '../../player/engine';
 import { getOfflineBookData } from '../../offline/storage';
 import { ProgressBar } from '../ui/ProgressBar';
@@ -17,7 +17,8 @@ export function ContinueListeningRow({ items }: { items: ContinueListeningItem[]
     if (!book) return;
     try {
       const [files, progress] = await Promise.all([fileMetadata(book.id), getBookProgress(book.id)]);
-      const resume = resolveResumePoint(files, progress);
+      const local = getLocalProgress(book.id);
+      const resume = reconcileProgress(files, progress, local);
       loadBook(book, files, resume);
       navigate(`/player/${book.id}`);
     } catch (e) {

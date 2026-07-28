@@ -96,6 +96,18 @@
   color: var(--color-ink-subtle);
 }
 
+.settings-number-input {
+  width: 4em;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-ink-hairline);
+  border-radius: var(--radius-sm, 6px);
+  text-align: right;
+}
+
 .settings-confirm-text {
   color: var(--color-ink-muted);
   font-size: var(--text-md);

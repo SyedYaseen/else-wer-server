@@ -25,6 +25,10 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Workbox's default (js,css,html) skips the bundled @fontsource woff2
+        // files and icon pngs, so an offline cold start rendered with fallback
+        // fonts and missing icons.
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {

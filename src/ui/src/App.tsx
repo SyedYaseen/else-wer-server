@@ -17,9 +17,13 @@ import { InstallBanner } from './components/ui/InstallBanner';
 import { NetworkBanner } from './components/ui/NetworkBanner';
 import { Toaster } from './components/ui/Toaster';
 import { startHealthPolling } from './lib/healthPoll';
+import { startProgressSyncOnReconnect } from './lib/playerResume';
+import { startTokenRefresh } from './lib/authRefresh';
 
 const queryClient = new QueryClient();
 startHealthPolling();
+startProgressSyncOnReconnect();
+startTokenRefresh();
 
 export default function App() {
   return (

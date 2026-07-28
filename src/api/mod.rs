@@ -34,7 +34,7 @@ use crate::{
         stats::{get_daily_stats, get_finished_books},
         sync::{get_book_progress, get_file_progress, list_inprogress, update_progress},
         user::{
-            change_password, create_user, delete_user, list_users, login,
+            change_password, create_user, delete_user, list_users, login, refresh_token,
             update_user_permissions,
         },
     },
@@ -106,6 +106,7 @@ pub async fn routes() -> Router<AppState> {
         .route("/update_user_permissions", post(update_user_permissions))
         .route("/user/change_password", put(change_password))
         .route("/login", post(login))
+        .route("/refresh_token", post(refresh_token))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 10))
 }
 

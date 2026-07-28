@@ -23,6 +23,7 @@ import { Tabs } from '../components/ui/Tabs';
 import { buildTree } from '../types/scan';
 import type { BookGroup, FileInfo, ChangeDto } from '../types/scan';
 import { describeChanges } from '../lib/describeChanges';
+import { showToast } from '../lib/toast';
 import '../components/organize/organize.css';
 
 type SheetState =
@@ -125,6 +126,8 @@ export function OrganizePage() {
     setScanning(true);
     try {
       await rescan();
+    } catch {
+      showToast("Couldn't scan library", 'error');
     } finally {
       setScanning(false);
     }
@@ -293,7 +296,7 @@ export function OrganizePage() {
         </div>
         <div className="organize-actions">
           <Button variant="secondary" onClick={handleRescan} disabled={scanning}>
-            <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Rescan'}
+            <RefreshIcon size={16} className={scanning ? 'spin' : undefined} /> {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
           <ActionMenu
             items={[

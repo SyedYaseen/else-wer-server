@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useThemeStore, type ThemeMode } from '../store/theme';
+import { usePlayerStore } from '../store/player';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { BottomSheet } from '../components/ui/BottomSheet';
@@ -27,6 +28,10 @@ export function SettingsPage() {
   const logout = useAuthStore((s) => s.logout);
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
+  const ffwdSec = usePlayerStore((s) => s.ffwdSec);
+  const rewindSec = usePlayerStore((s) => s.rewindSec);
+  const setFfwdSec = usePlayerStore((s) => s.setFfwdSec);
+  const setRewindSec = usePlayerStore((s) => s.setRewindSec);
   const navigate = useNavigate();
   const [downloads, setDownloads] = useState<DownloadedBook[] | null>(null);
   const [sheet, setSheet] = useState<SheetState>(null);
@@ -134,6 +139,30 @@ export function SettingsPage() {
           </Button>
         </>
       )}
+
+      <h2 className="settings-section-title">Playback</h2>
+      <Card>
+        <div className="settings-account-row">
+          <span>Rewind</span>
+          <input
+            className="settings-number-input"
+            type="number"
+            min={1}
+            value={rewindSec}
+            onChange={(e) => setRewindSec(Math.max(1, Number(e.target.value) || 1))}
+          />
+        </div>
+        <div className="settings-account-row">
+          <span>Fast-forward</span>
+          <input
+            className="settings-number-input"
+            type="number"
+            min={1}
+            value={ffwdSec}
+            onChange={(e) => setFfwdSec(Math.max(1, Number(e.target.value) || 1))}
+          />
+        </div>
+      </Card>
 
       <h2 className="settings-section-title">Appearance</h2>
       <Tabs

@@ -50,6 +50,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    // A real server 401 (expired or revoked token — only ever seen while online,
+    // an unreachable server throws above instead) clears the session; RequireAuth
+    // reacts to the emptied store and redirects to /login. Login's own 401
+    // (bad credentials) is excluded so it stays a normal form error.
+    if (res.status === 401 && !UNAUTHENTICATED_PATHS.has(path)) {
+      useAuthStore.getState().logout();
+    }
     throw new ApiError(res.status, body || res.statusText);
   }
 

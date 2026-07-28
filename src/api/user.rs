@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use crate::api::api_error::ApiError;
+use crate::api::auth_extractor::AuthUser;
 use crate::api::middleware::AdminUser;
-use crate::db::user::{self, admin_exists, get_user_by_username};
+use crate::db::user::{self, admin_exists, get_user_by_id, get_user_by_username};
 use crate::models::user::{Claims, User};
 use crate::{
     AppState,
@@ -216,8 +217,16 @@ async fn auth_and_issue_jwt(
     let parsed_hash = PasswordHash::new(&user.password_hash)?;
     Argon2::default().verify_password(user_input.password.as_bytes(), &parsed_hash)?;
 
+    issue_jwt(&user, jwt_secret)
+}
+
+fn issue_jwt(user: &User, jwt_secret: &[u8]) -> Result<String, ApiError> {
     let now = Utc::now();
-    let exp = now + Duration::hours(24); // token valid for 24 hours
+    // 30 days rather than hours: the PWA silently re-issues via /refresh_token on
+    // every app start/reconnect, so expiry is only ever hit by a device that stayed
+    // offline (or logged out) for a full month. Revocation still works through the
+    // token_version check on every request.
+    let exp = now + Duration::days(30);
 
     let claims = Claims {
         sub: user.id,
@@ -240,6 +249,28 @@ async fn auth_and_issue_jwt(
     )?;
 
     Ok(token)
+}
+
+// Silent renewal: exchanges a still-valid token for a fresh 30-day one. Claims are
+// rebuilt from the DB row (not copied from the old token) so role/permission changes
+// take effect on refresh. AuthUser already enforces signature, expiry and
+// token_version, so a revoked or expired token can never be renewed here.
+pub async fn refresh_token(
+    AuthUser(claims): AuthUser,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    if !state.config.self_hosted {
+        return Err(ApiError::BadRequest(
+            "Token refresh is only available in self-hosted mode".into(),
+        ));
+    }
+
+    let user = get_user_by_id(&state.db_pool, claims.sub)
+        .await?
+        .ok_or_else(|| ApiError::Unauthorized("Invalid token".into()))?;
+
+    let token = issue_jwt(&user, state.config.jwt_secret.as_bytes())?;
+    Ok((StatusCode::OK, Json(json!({ "token": token }))))
 }
 
 async fn get_relay_token(state: AppState, payload: &LoginDto) -> Result<String, ApiError> {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { Button } from '../components/ui/Button';
 import { ActionMenu } from '../components/ui/ActionMenu';
@@ -13,9 +14,13 @@ import { ContinueListeningRow } from '../components/library/ContinueListeningRow
 import { useLibraryBooks, useLibraries, useInProgressBooks, useRescan } from '../hooks/useLibraryBooks';
 import { useBookSearch } from '../hooks/useBookSearch';
 import { useInstallPrompt } from '../pwa/useInstallPrompt';
-import { buildContinueListening } from '../lib/continueListening';
+import { buildContinueListening, type ContinueListeningItem } from '../lib/continueListening';
+import { listDownloadedBooks } from '../offline/storage';
+import { useNetworkStatusStore } from '../store/networkStatus';
+import { getLocalProgress } from '../lib/playerResume';
 import { groupByAuthor, groupBySeries } from '../lib/groupBooks';
 import { RefreshIcon, ChecklistIcon, DownloadIcon, SettingsIcon } from '../components/ui/icons';
+import { showToast } from '../lib/toast';
 import '../components/library/library.css';
 
 const LIBRARY_TABS = [
@@ -43,6 +48,35 @@ export function LibraryPage() {
   const { data: books = [], isLoading, isError, refetch } = useLibraryBooks();
   const { data: libraries = [] } = useLibraries();
   const { data: progress = [] } = useInProgressBooks();
+
+  // Offline shelf: when the live library can't load, fall back to downloaded
+  // books from IndexedDB so a cold start with the server unreachable still
+  // reaches playback instead of dead-ending on the error state. Keyed on
+  // !reachable as well as isError: the health poll flags an unreachable server
+  // within seconds, while the query's retries+timeouts can take 30s+ to reach
+  // isError on a cold start (fetches hanging on dead wifi).
+  const reachable = useNetworkStatusStore((s) => s.reachable);
+  const serverDown = isError || !reachable;
+  const { data: offlineBooks = [] } = useQuery({
+    queryKey: ['offline-library'],
+    queryFn: listDownloadedBooks,
+    enabled: serverDown,
+  });
+  const offlineMode = serverDown && books.length === 0 && offlineBooks.length > 0;
+
+  // Locally cached progress only (one row per book) — the per-file server rows
+  // buildContinueListening sums are unreachable here, so progressMs is the
+  // current file's position: an underestimate, fine for the offline bar.
+  const offlineContinue: ContinueListeningItem[] = offlineMode
+    ? offlineBooks
+        .flatMap(({ book }) => {
+          const [local] = getLocalProgress(book.id);
+          return local && !local.complete
+            ? [{ book, progressMs: local.progress_ms, updatedAt: local.updated_at }]
+            : [];
+        })
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+    : [];
   const rescan = useRescan();
   const [activeTab, setActiveTab] = useState('all');
   const [libraryFilter, setLibraryFilter] = useState<string>('all');
@@ -87,6 +121,8 @@ export function LibraryPage() {
     setScanning(true);
     try {
       await rescan();
+    } catch {
+      showToast("Couldn't scan library", 'error');
     } finally {
       setScanning(false);
     }
@@ -105,10 +141,12 @@ export function LibraryPage() {
               {books.length} {books.length === 1 ? 'audiobook' : 'audiobooks'}
             </p>
           )}
+          {offlineMode && <p className="library-count">Offline — showing downloaded books</p>}
         </div>
+        {!offlineMode && (
         <div className="library-actions">
           <Button variant="secondary" onClick={handleRescan} disabled={scanning}>
-            <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Rescan'}
+            <RefreshIcon size={16} className={scanning ? 'spin' : undefined} /> {scanning ? 'Scanning…' : 'Rescan'}
           </Button>
           {canOrganize && (
             <Link className="library-organize-link" to="/organize">
@@ -132,12 +170,15 @@ export function LibraryPage() {
             ]}
           />
         </div>
+        )}
       </div>
       <InstallSheet open={installSheetOpen} onClose={() => setInstallSheetOpen(false)} />
 
-      {isLoading && !books.length && <div className="library-state">Loading library…</div>}
+      {isLoading && !books.length && !offlineMode && (
+        <div className="library-state">Loading library…</div>
+      )}
 
-      {isError && !books.length && (
+      {serverDown && !books.length && !offlineMode && !isLoading && (
         <div className="library-state">
           <div className="library-state-title">Couldn't load library</div>
           <p>Check your server connection and try again.</p>
@@ -147,12 +188,23 @@ export function LibraryPage() {
         </div>
       )}
 
-      {!isLoading && !isError && books.length === 0 && (
+      {offlineMode && (
+        <>
+          <ContinueListeningRow items={offlineContinue} />
+          <div className="library-grid">
+            {offlineBooks.map(({ book }) => (
+              <BookCard key={book.id} book={book} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {!isLoading && !serverDown && books.length === 0 && (
         <div className="library-state">
           <div className="library-state-title">No audiobooks yet</div>
           <p>Scan your server to discover audiobooks.</p>
           <Button variant="primary" onClick={handleRescan} disabled={scanning}>
-            <RefreshIcon size={16} /> {scanning ? 'Scanning…' : 'Scan for audiobooks'}
+            <RefreshIcon size={16} className={scanning ? 'spin' : undefined} /> {scanning ? 'Scanning…' : 'Scan for audiobooks'}
           </Button>
         </div>
       )}

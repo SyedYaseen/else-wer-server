@@ -87,6 +87,11 @@ pub struct ProgressUpdate {
     // listening-stats aggregate.
     #[serde(default)]
     pub listened_delta_ms: Option<i64>,
+    // Client wall-clock time of the save. Used by upsert_progress's last-write-wins
+    // guard so a device replaying progress recorded while offline can't overwrite a
+    // newer position written by another device in the meantime.
+    #[serde(default)]
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

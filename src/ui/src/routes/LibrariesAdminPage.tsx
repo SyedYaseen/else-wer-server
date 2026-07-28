@@ -6,6 +6,7 @@ import { Pill } from '../components/ui/Pill';
 import { ActionMenu } from '../components/ui/ActionMenu';
 import { BottomSheet } from '../components/ui/BottomSheet';
 import { ChevronRightIcon } from '../components/organize/icons';
+import { RefreshIcon } from '../components/ui/icons';
 import { useLibraries } from '../hooks/useLibraryBooks';
 import {
   useCreateLibrary,
@@ -119,6 +120,7 @@ export function LibrariesAdminPage() {
               items={[
                 {
                   label: scanningId === library.id ? 'Scanning…' : 'Scan now',
+                  icon: <RefreshIcon size={16} className={scanningId === library.id ? 'spin' : undefined} />,
                   onClick: () => handleScan(library),
                   disabled: scanningId === library.id,
                 },
