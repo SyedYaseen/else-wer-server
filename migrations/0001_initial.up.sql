@@ -1,35 +1,75 @@
--- Create audiobooks table
-CREATE TABLE IF NOT EXISTS audiobooks (
+-- Squashed initial schema (was 0001-0008; see git history for the incremental steps).
+-- No ALTER TABLE anywhere: every table is created directly in its final shape.
+
+CREATE TABLE series (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    provider TEXT,
+    provider_id TEXT
+);
+
+CREATE UNIQUE INDEX idx_series_provider_id
+    ON series (provider, provider_id) WHERE provider_id IS NOT NULL;
+
+-- Folder-identity model: a book is identified by its folder (files_location) plus a
+-- title partition within it.
+CREATE TABLE audiobooks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     author TEXT NOT NULL,
     series TEXT,
     title TEXT NOT NULL,
     files_location TEXT NOT NULL,
+    book_size INTEGER DEFAULT 0,
     cover_art TEXT,
     metadata TEXT,
     duration INTEGER DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (author, title)
+    series_id INTEGER REFERENCES series (id),
+    -- TEXT: sequences like "1.5" exist
+    series_sequence TEXT,
+    asin TEXT,
+    narrated_by TEXT,
+    description TEXT,
+    -- Set when the user edits a book (org UI / match apply); rescans never overwrite locked rows
+    user_locked INTEGER NOT NULL DEFAULT 0,
+    -- Set when the user manually assigns/clears a book's series; the automatic
+    -- metadata pass never touches series fields on locked rows
+    series_locked INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (files_location, title)
 );
 
--- Create files table
-CREATE TABLE IF NOT EXISTS files (
+CREATE INDEX idx_audiobooks_author ON audiobooks (author);
+
+CREATE INDEX idx_audiobooks_title ON audiobooks (title);
+
+CREATE TRIGGER update_audiobooks_timestamp
+AFTER UPDATE ON audiobooks
+FOR EACH ROW
+BEGIN
+    UPDATE audiobooks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- `files` is the single per-file ledger; `id` is the single file-id space used
+-- everywhere (org UI, progress, downloads, streaming).
+CREATE TABLE files (
     id INTEGER PRIMARY KEY,
     book_id INTEGER NOT NULL,
-    file_id INTEGER NOT NULL,
     file_name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
+    file_path TEXT NOT NULL UNIQUE,
+    file_size INTEGER NOT NULL DEFAULT 0,
     duration INTEGER,
     channels INTEGER,
     sample_rate INTEGER,
     bitrate INTEGER,
-    FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE,
-    UNIQUE (book_id, file_id, file_path)
+    track_number INTEGER,
+    disc_number INTEGER,
+    FOREIGN KEY (book_id) REFERENCES audiobooks (id) ON DELETE CASCADE
 );
 
--- Create users table
-CREATE TABLE IF NOT EXISTS users (
+CREATE INDEX idx_files_book_id ON files (book_id);
+
+CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
@@ -38,8 +78,7 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create progress table
-CREATE TABLE IF NOT EXISTS progress (
+CREATE TABLE progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     book_id INTEGER NOT NULL,
@@ -53,49 +92,4 @@ CREATE TABLE IF NOT EXISTS progress (
     UNIQUE (user_id, book_id, file_id)
 );
 
-CREATE TABLE IF NOT EXISTS file_scan_cache (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    library_id INTEGER DEFAULT 1, -- multiple libraries later
-    author TEXT, -- allow NULL in case we can't parse
-    title TEXT,
-    clean_title TEXT,
-    file_path TEXT NOT NULL,
-    file_name TEXT NOT NULL,
-    path_parent TEXT NOT NULL,
-    series TEXT,
-    clean_series TEXT,
-    dramatized BOOLEAN NOT NULL DEFAULT FALSE,
-    series_part INTEGER DEFAULT NULL, -- store series order if known
-    cover_art TEXT, -- path or URL to extracted cover
-    pub_year INTEGER,
-    narrated_by TEXT,
-    duration INTEGER DEFAULT 0, -- seconds
-    track_number INTEGER DEFAULT NULL, -- if multi-part file
-    disc_number INTEGER DEFAULT NULL, -- for multi-disc sets
-    file_size INTEGER DEFAULT 0, -- for streaming/buffering
-    mime_type TEXT, -- audio/mpeg, audio/m4b, etc.
-    channels INTEGER,
-    sample_rate INTEGER,
-    bitrate INTEGER,
-    extracts TEXT, -- extracts from series, author, title, filename as json
-    raw_metadata TEXT NOT NULL, -- store full JSON dump
-    resolve_status INTEGER,
-    hash TEXT, -- optional: for duplicate detection
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (file_path)
-);
-
-CREATE INDEX idx_files_author_title ON file_scan_cache (author, title);
-
-CREATE INDEX idx_files_series ON file_scan_cache (series);
-
-CREATE INDEX idx_files_hash ON file_scan_cache (hash);
-
--- Create triggers for timestamps
-CREATE TRIGGER update_audiobooks_timestamp
-AFTER UPDATE ON audiobooks
-FOR EACH ROW
-BEGIN
-    UPDATE audiobooks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-END;
+CREATE UNIQUE INDEX uq_progress_user_book_file ON progress (user_id, book_id, file_id);

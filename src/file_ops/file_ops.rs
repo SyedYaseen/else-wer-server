@@ -1,7 +1,5 @@
 use crate::api::api_error::ApiError;
-use crate::db::audiobooks::{
-    insert_audiobook, insert_file_metadata, list_all_books, update_audiobook_duration,
-};
+use crate::db::audiobooks::{insert_audiobook, insert_file_metadata, list_books};
 use crate::file_ops::book_cover::create_cover_link;
 use crate::models::audiobooks::{AudioBook, AudioBookRow, CreateFileMetadata};
 use futures::{StreamExt, stream};
@@ -181,8 +179,16 @@ pub async fn extract_metadata(path: &str) -> Result<CreateFileMetadata, ApiError
         .to_string_lossy()
         .into_owned();
 
-    let mut metadata =
-        CreateFileMetadata::new(path_owned.clone(), None, file_name, None, None, None, None);
+    let mut metadata = CreateFileMetadata::new(
+        path_owned.clone(),
+        None,
+        file_name,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
 
     let probe = Probe::open(&path_owned).inspect_err(|e| {
         tracing::error!(
@@ -256,10 +262,10 @@ async fn capture_metadata(
                     .ok();
             }
 
-            update_audiobook_duration(&db, book_id.to_owned(), total_duration)
-                .await
-                .inspect_err(|e| tracing::error!("Err updating duration {}. {}", book.title, e))
-                .ok();
+            // update_audiobook_duration(&db, book_id.to_owned(), total_duration)
+            //    .await
+            //    .inspect_err(|e| tracing::error!("Err updating duration {}. {}", book.title, e))
+            //   .ok();
 
             metadata
         })
@@ -299,7 +305,7 @@ pub async fn scan_for_audiobooks(
 
     capture_metadata(inserted_books, &db).await?;
 
-    let audio_books = list_all_books(db).await?;
+    let audio_books = list_books(db, None, None).await?;
 
     Ok(audio_books)
 }

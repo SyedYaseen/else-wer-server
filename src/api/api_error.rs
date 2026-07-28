@@ -19,8 +19,14 @@ pub enum ApiError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
+
+    #[error("Too many requests: {0}")]
+    TooManyRequests(String),
 
     #[error("JWT error")]
     JwtErr(#[from] jsonwebtoken::errors::Error),
@@ -45,20 +51,32 @@ pub enum ApiError {
 
     #[error("Serde Json: {0}")]
     JsonErr(#[from] serde_json::Error),
+
+    #[error("Fetch failed: {0}")]
+    ReqwestErr(#[from] reqwest::Error),
+
+    #[error("Zip error: {0}")]
+    ZipErr(#[from] zip::result::ZipError),
+
+    #[error("HTTP response build error: {0}")]
+    HttpErr(#[from] axum::http::Error),
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        tracing::error!("API error: {:?}", self);
-
         let (status, error_message) = match &self {
+            ApiError::Database(sqlx::Error::RowNotFound) => {
+                (StatusCode::NOT_FOUND, "Not found".to_string())
+            }
             ApiError::Database(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Database error".to_string(),
             ),
             ApiError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
+            ApiError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, msg.clone()),
             ApiError::JwtErr(_) => (
                 StatusCode::UNAUTHORIZED,
                 "Invalid or expired token".to_string(),
@@ -87,7 +105,25 @@ impl IntoResponse for ApiError {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Err while serialization".to_string(),
             ),
+            ApiError::ReqwestErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to reach an external server".to_string(),
+            ),
+            ApiError::ZipErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while building archive".to_string(),
+            ),
+            ApiError::HttpErr(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Err while building response".to_string(),
+            ),
         };
+
+        if status.is_server_error() {
+            tracing::error!("API error: {:?}", self);
+        } else {
+            tracing::debug!("API error: {:?}", self);
+        }
 
         let body = Json(json!({
             "error": error_message,

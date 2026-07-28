@@ -1,0 +1,480 @@
+/* MiniPlayer, PlayerPage, Seeker, secondary controls, sheets — proportions
+   ported from else-wer-app/components/player/*. */
+
+.mini-player {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 720px;
+  margin: 0 auto;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 0 var(--space-md) env(safe-area-inset-bottom, 0px);
+  background: var(--color-surface);
+  border-top: 0.5px solid var(--color-ink-hairline);
+  border-left: 0.5px solid var(--color-ink-hairline);
+  border-right: 0.5px solid var(--color-ink-hairline);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  z-index: 50;
+}
+
+@media (max-width: 720px) {
+  .mini-player {
+    border-left: none;
+    border-right: none;
+    box-shadow: none;
+  }
+}
+
+.mini-player-cover,
+.mini-player-cover-placeholder {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--color-surface-deep);
+}
+
+.mini-player-cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  color: var(--color-ink-subtle);
+}
+
+.mini-player-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.mini-player-title {
+  font-family: var(--font-serif);
+  font-size: var(--text-md);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-player-author {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-player-play {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+}
+
+.mini-player-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+/* ── PlayerPage ───────────────────────────────────────────────────────── */
+
+.player-page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: calc(var(--space-lg) + env(safe-area-inset-top, 0px)) var(--space-xl)
+    calc(var(--space-xxxl) + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+}
+
+.player-state {
+  align-items: center;
+  text-align: center;
+  color: var(--color-ink-subtle);
+  padding-top: var(--space-xxxl);
+}
+
+.player-back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  padding: var(--space-sm);
+  margin-left: calc(var(--space-sm) * -1);
+}
+
+.player-cover-wrap {
+  display: flex;
+  justify-content: center;
+  margin: var(--space-lg) 0 var(--space-xl);
+}
+
+.player-cover,
+.player-cover-placeholder {
+  width: 68%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+  box-shadow: var(--shadow-md);
+  background: var(--color-surface-deep);
+}
+
+.player-cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 64px;
+  color: var(--color-ink-subtle);
+}
+
+.player-info {
+  text-align: center;
+  padding: 0 var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.player-title {
+  font-size: var(--text-xxl);
+  line-height: 1.2;
+}
+
+.player-author {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-size: var(--text-lg);
+  color: var(--color-ink-muted);
+  margin: var(--space-xs) 0 0;
+}
+
+.player-chapter {
+  font-size: var(--text-base);
+  color: var(--color-ink-subtle);
+  letter-spacing: 0.02em;
+  margin: 2px 0 0;
+}
+
+/* ── Seeker ───────────────────────────────────────────────────────────── */
+
+.seeker {
+  margin-bottom: var(--space-md);
+}
+
+.seeker-time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-base);
+  color: var(--color-ink-subtle);
+  margin-bottom: 2px;
+}
+
+.seeker-slider {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+/* ── Transport ────────────────────────────────────────────────────────── */
+
+.player-transport {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-xxl);
+  margin: var(--space-lg) 0 var(--space-xl);
+}
+
+.player-transport-btn {
+  background: none;
+  border: none;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+}
+
+.player-transport-play {
+  background: none;
+  border: none;
+  color: var(--color-ink);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+}
+
+/* ── Secondary controls ───────────────────────────────────────────────── */
+
+.player-secondary {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-top: var(--space-md);
+  border-top: 0.5px solid var(--color-ink-hairline);
+}
+
+.player-secondary-btn {
+  position: relative;
+  background: none;
+  border: none;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  padding: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+}
+
+.player-speed-label {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: var(--text-lg);
+}
+
+.player-secondary-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+/* ── Sheets: shared ───────────────────────────────────────────────────── */
+
+.sheet-title {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-md);
+}
+
+/* ── Speed sheet ──────────────────────────────────────────────────────── */
+
+.speed-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-sm);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.speed-option {
+  padding: var(--space-sm) 0;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--color-ink-hairline);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+
+.speed-option.active {
+  color: var(--color-accent);
+  background: var(--color-accent-muted);
+  font-weight: 500;
+}
+
+/* ── Chapters sheet ───────────────────────────────────────────────────── */
+
+.chapters-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chapters-sheet-header .sheet-title {
+  margin-bottom: 0;
+}
+
+.chapters-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.chapter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border: none;
+  border-bottom: 0.5px solid var(--color-ink-hairline);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--color-ink);
+}
+
+.chapter-row:last-child {
+  border-bottom: none;
+}
+
+.chapter-row.played .chapter-name {
+  color: var(--color-ink-subtle);
+}
+
+.chapter-row.current .chapter-name {
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.chapter-active-bar {
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.chapter-row.current .chapter-active-bar {
+  background: var(--color-accent);
+}
+
+.chapter-name {
+  flex: 1;
+  font-size: var(--text-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chapter-duration {
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+}
+
+.chapter-row.current svg {
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* ── Bookmarks sheet ──────────────────────────────────────────────────── */
+
+.bookmark-add-row {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.bookmark-note-input {
+  flex: 1;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--color-ink-hairline);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+}
+
+.bookmark-add-btn {
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--color-accent);
+  color: var(--color-surface);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bookmark-add-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.bookmarks-empty {
+  color: var(--color-ink-subtle);
+  font-size: var(--text-sm);
+}
+
+.bookmarks-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  border-bottom: 0.5px solid var(--color-ink-hairline);
+}
+
+.bookmark-row:last-child {
+  border-bottom: none;
+}
+
+.bookmark-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--color-ink);
+  padding: 0;
+}
+
+.bookmark-timestamp {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-accent);
+}
+
+.bookmark-note {
+  font-size: var(--text-sm);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ── Sleep timer sheet ────────────────────────────────────────────────── */
+
+.sleep-status {
+  color: var(--color-ink-muted);
+  margin-bottom: var(--space-md);
+}
+
+.sleep-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+}
+
+.sleep-option {
+  padding: var(--space-md) 0;
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--color-ink-hairline);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  cursor: pointer;
+}

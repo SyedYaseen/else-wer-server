@@ -1,119 +1,60 @@
-# Phase 1 Technical Plan (Rust server on Pi Zero)
-## File Scanning
-- Use walkdir or ignore crate to recursively list files.
-- Extract metadata with symphonia or lofty (for ID3/tags).
+# else-wer
 
-## API Layer
-- Use axum or actix-web (Axum is lighter and async-friendly).
-- Expose endpoints like:
-    - GET /audiobooks → returns list with metadata
-    - GET /audiobooks/:id/download → returns file
-    - POST /sync → accepts playback progress and stores per-user/book
+A self-hosted audiobook server with a Rust backend and a PWA frontend. Point it at your audiobook
+library, run it in Docker, and stream to any browser (installable as an app on iOS/Android via the
+PWA).
 
-## State Storage
-- Use sled, sqlite, or even simple JSON files (for now).
-- Store:
-    - User playback positions
-    - File index/cache
+Features: library scanning with metadata extraction, per-user playback progress sync, multi-user
+accounts with admin roles, cover art, and file organization tools.
 
-## Proxy/VPN
-- Setup Tailscale or WireGuard for secure remote access to the Pi.
-- Or add NGINX + basic auth over HTTPS.
+## Quickstart (Docker)
 
-## React Native App - Android
-- Browse + download files
-- Play audio locally
-- Sync position (e.g. every minute or on pause/stop)
+```bash
+cp .env.docker.example .env.docker
+# edit .env.docker and set JWT_SECRET, e.g.:
+openssl rand -hex 32
 
+mkdir -p audiobooks   # put your audiobook library here
 
-# Phase 2, we can optimize for:
-- Streaming with HTTP range requests
-- Playlist/queue management
-- Optional transcode (with gstreamer or ffmpeg) for low bandwidth
-- Option to organize the books folder based on book/ series/ author data, so the user doesnt have to do it
+docker compose up -d
+```
 
-# Phase 3
-- Include books
-- Ability to sync progress between audio and epub
+The server is now available at `http://localhost:3000`.
 
+Volumes:
+- `else-wer-data` (named volume) → `/data` — database, JWT signing key, cover art
+- `./audiobooks` (bind mount) → `/audiobooks` — your audiobook library
 
+## Configuration
 
-## Test curl
-curl localhost:3000/api/scan_files
+Set these in `.env.docker` (see `.env.docker.example`):
 
-curl -X POST http://localhost:3000/api/update_progress \
-  -H 'content-type: application/json' \
-  -d '{
-    "user_id": 1,
-    "book_id": 5,
-    "file_id": 21,
-    "progress_ms": 119720.00122070312,
-    "complete": false
-  }' -i
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `JWT_SECRET` | yes | — | Secret used to sign auth tokens. Generate with `openssl rand -hex 32`. |
+| `PORT` | no | `3000` | Port the server listens on. |
+| `RUST_LOG` | no | `info` | Log verbosity. |
+| `CORS_ALLOWED_ORIGINS` | no | — | Comma-separated allowed origins. Only needed if you're serving the frontend from a different origin than the API. |
 
+## HTTPS / installing as a PWA
 
+iOS only registers a PWA service worker over a secure (HTTPS) context. If you want to install
+else-wer as an app on your phone without port-forwarding or owning a domain, see
+[`deploy/https-duckdns/`](deploy/https-duckdns/README.md) for a ~5 minute DuckDNS + Let's Encrypt +
+Caddy setup.
 
-  <!-- 1 5 21 119720.00122070312 false -->
+## Upgrading
 
-curl localhost:3000/api/file_metadata/1
+Database migrations run automatically on container startup — there's no manual migration step.
+Upgrading is just pulling a new image and restarting:
 
-curl localhost:3000/api/get_progress/1/7/6
+```bash
+docker compose pull
+docker compose up -d
+```
 
+Your data lives in the `else-wer-data` volume. Back it up before major version upgrades.
 
+## License
 
-http://192.168.1.3:3000/api/login valerie mypassword
-
-curl localhost:3000/api/covers//app/static/covers/elder_race_[2021].jpg
-
-User
-curl -X POST http://localhost:3000/api/create_user \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo" \
-  -d '{"username": "valerie", "password": "mypassword", "is_admin": false}'
-
-  curl -X POST http://192.168.1.3:3000/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "valerie", "password": "mypassword"}'
-
-
-Admin
-curl -X POST http://localhost:3000/api/create_user \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin", "is_admin": true}'
-
-  curl -X POST http://192.168.1.3:3000/api/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin"}'
-
-valerie
-curl -X GET http://localhost:3000/api/hello \
--H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo"
-
-admin
-curl -X GET http://localhost:3000/api/hello \
--H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8"
-
-// Wont work because no admin access
-curl -X POST http://localhost:3000/api/create_user \
--H "Content-Type: application/json" \
--H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjIsInJvbGUiOiJ1c2VyIiwidXNlcm5hbWUiOiJ2YWxlcmllIiwiZXhwIjoxNzU0OTg5MjcyLCJpYXQiOjE3NTQ5MDI4NzJ9.maP1PrYux61oX7TxzSFJEC8UbIWLhEz7g8UCAE0vMOo" \
--d '{"username": "test1", "password": "mypassword", "is_admin": false}'
-
-
-
-curl -X POST http://localhost:3000/api/create_user \
--H "Content-Type: application/json" \
--H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NTQ5OTI2NzYsImlhdCI6MTc1NDkwNjI3Nn0.vhTRmbui7hWIFc2BhADMc9YHP1FjcYkCpgBbR3J-dS8" \
--d '{"username": "test1", "password": "mypassword", "is_admin": false}'
-
-curl -X POST http://localhost:3000/api/upload \
--F "file=@chunk0.bin" \
--F "fileName=test.bin" \
--F "chunkIndex=0" \
--F "totalChunks=3"
-
-
-## Deploy notes
-Static build
-cross build --target armv7-unknown-linux-musleabihf --release &&
-scp target/armv7-unknown-linux-musleabihf/release/rustybookshelf yaseen@192.168.1.12:/home/yaseen/
+Not yet licensed.

@@ -1,0 +1,137 @@
+/* Folio design tokens, ported from else-wer-app/theme/{colors,typography,spacing,radius,shadows}.ts */
+
+:root {
+  --color-background: #FDFBF8;
+  --color-surface: #F5F2EC;
+  --color-surface-deep: #EDE9E1;
+  --color-ink: #1C1B19;
+  --color-ink-muted: #6B6860;
+  --color-ink-subtle: #B5B3AE;
+  --color-ink-hairline: #ECEAE6;
+  --color-accent: #8C7355;
+  --color-accent-light: #C4A882;
+  --color-accent-muted: #F0E8DC;
+  --color-sage: #5C7A6E;
+  --color-warning: #A0622A;
+  --color-danger: #8B3A3A;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.1);
+
+  --font-serif: 'DM Serif Display', serif;
+  --font-sans: 'DM Sans', sans-serif;
+
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-base: 12px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-xxl: 22px;
+  --text-display: 52px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --space-xxxl: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 100px;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #141210;
+    --color-surface: #1E1C19;
+    --color-surface-deep: #252320;
+    --color-ink: #F0EDE7;
+    --color-ink-muted: #9C9890;
+    --color-ink-subtle: #5C5A55;
+    --color-ink-hairline: #2E2C29;
+    --color-accent: #C4A882;
+    --color-accent-light: #8C7355;
+    --color-accent-muted: #2A2318;
+    --color-sage: #7AA898;
+    --color-warning: #C8843A;
+    --color-danger: #B85555;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+    --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.28);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-background: #141210;
+  --color-surface: #1E1C19;
+  --color-surface-deep: #252320;
+  --color-ink: #F0EDE7;
+  --color-ink-muted: #9C9890;
+  --color-ink-subtle: #5C5A55;
+  --color-ink-hairline: #2E2C29;
+  --color-accent: #C4A882;
+  --color-accent-light: #8C7355;
+  --color-accent-muted: #2A2318;
+  --color-sage: #7AA898;
+  --color-warning: #C8843A;
+  --color-danger: #B85555;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme='light'] {
+  --color-background: #FDFBF8;
+  --color-surface: #F5F2EC;
+  --color-surface-deep: #EDE9E1;
+  --color-ink: #1C1B19;
+  --color-ink-muted: #6B6860;
+  --color-ink-subtle: #B5B3AE;
+  --color-ink-hairline: #ECEAE6;
+  --color-accent: #8C7355;
+  --color-accent-light: #C4A882;
+  --color-accent-muted: #F0E8DC;
+  --color-sage: #5C7A6E;
+  --color-warning: #A0622A;
+  --color-danger: #8B3A3A;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--color-background);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  margin: 0;
+}

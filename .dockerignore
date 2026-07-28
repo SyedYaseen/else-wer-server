@@ -1,0 +1,15 @@
+target/
+node_modules/
+src/ui/node_modules/
+src/ui/dist/
+else-wer.db
+*.db
+.env
+.env.*
+data/
+covers/
+creds/
+http/
+graphify-out/
+todo/
+.git/

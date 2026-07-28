@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  pwa:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/ui/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pwa-dist
+          path: src/ui/dist
+
+  build:
+    needs: pwa
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite:./build.db
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pwa-dist
+          path: pwa-dist
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Cache cross/sqlx-cli binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cross
+            ~/.cargo/bin/sqlx
+          key: release-tools-${{ runner.os }}-cross0.2-sqlx0.8
+
+      - name: Install cross and sqlx-cli
+        run: |
+          command -v cross || cargo install cross --locked
+          command -v sqlx || cargo install sqlx-cli --no-default-features --features sqlite,rustls --locked
+
+      # sqlx::query!/query_as! macros type-check against a real schema at compile time; build a
+      # throwaway DB here (never shipped, same approach as the Dockerfile's rust-build stage) just
+      # to satisfy them. `cross` mounts the repo root into its build container, so this relative
+      # path resolves the same way inside as out.
+      - name: Prepare build database
+        run: |
+          sqlx database create
+          sqlx migrate run
+
+      - name: Build release binary
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          stage="else-wer-${{ matrix.target }}"
+          mkdir -p "$stage/pwa"
+          cp "target/${{ matrix.target }}/release/else-wer" "$stage/"
+          cp -r pwa-dist/. "$stage/pwa/"
+          cp LICENSE "$stage/"
+          cat > "$stage/README.txt" <<'EOF'
+          Else-wer - bare-metal release build
+
+          1. Set env vars (see .env.docker.example in the source repo for the full reference):
+               JWT_SECRET     required, no default
+               DATABASE_URL   default sqlite:./else-wer.db
+               AUDIOBOOKS_LOCATION  default ./data
+               PWA_DIST_LOCATION    set this to ./pwa - the packaged default (src/ui/dist) won't
+                                    resolve outside a source checkout
+          2. Run ./else-wer from this directory - migrations are embedded and applied automatically
+             on first start.
+          3. For HTTPS, see deploy/https-duckdns/README.md in the source repo.
+          EOF
+          tar czf "$stage.tar.gz" "$stage"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: else-wer-${{ matrix.target }}.tar.gz

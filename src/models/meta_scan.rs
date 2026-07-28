@@ -1,69 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
-use sqlx::sqlite::{SqliteTypeInfo, SqliteValueRef};
-use sqlx::{Decode, Encode, Sqlite, Type};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(i64)]
-pub enum ResolvedStatus {
-    UnResolved = 0,
-    AutoResolved = 1,
-    UserResolved = 2,
-    Ignored = 4,
-}
-
-impl ResolvedStatus {
-    pub const fn value(&self) -> i64 {
-        match self {
-            ResolvedStatus::UnResolved => 0,
-            ResolvedStatus::AutoResolved => 1,
-            ResolvedStatus::UserResolved => 2,
-            ResolvedStatus::Ignored => 3,
-        }
-    }
-
-    pub const fn from_value(value: i64) -> Option<Self> {
-        match value {
-            0 => Some(ResolvedStatus::UnResolved),
-            1 => Some(ResolvedStatus::AutoResolved),
-            2 => Some(ResolvedStatus::UserResolved),
-            3 => Some(ResolvedStatus::Ignored),
-            _ => None,
-        }
-    }
-}
-
-impl Type<Sqlite> for ResolvedStatus {
-    fn type_info() -> SqliteTypeInfo {
-        <i64 as Type<Sqlite>>::type_info()
-    }
-}
-
-impl<'r> Decode<'r, Sqlite> for ResolvedStatus {
-    fn decode(value: SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let int_val = <i64 as Decode<Sqlite>>::decode(value)?;
-        match int_val {
-            0 => Ok(ResolvedStatus::UnResolved),
-            1 => Ok(ResolvedStatus::AutoResolved),
-            2 => Ok(ResolvedStatus::UserResolved),
-            4 => Ok(ResolvedStatus::Ignored),
-            other => Err(format!("Invalid ResolvedStatus value: {}", other).into()),
-        }
-    }
-}
-
-// impl<'q> Encode<'q, Sqlite> for ResolvedStatus {
-//     fn encode_by_ref(
-//         &self,
-//         buf: &mut <Sqlite as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
-//     ) -> sqlx::encode::IsNull {
-//         (*(*self as i64)).encode_by_ref(buf)
-//     }
-// }
-
+/// One in-memory scan record for a single file, built by `scan_files` and consumed
+/// directly by `group_and_attach_files` (no DB staging table since 0008 dropped
+/// `file_scan_cache`).
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct FileScanCache {
-    // pub library_id: i64,
     pub author: Option<String>,
     pub title: Option<String>,
     pub clean_title: Option<String>,
@@ -86,9 +28,6 @@ pub struct FileScanCache {
     pub sample_rate: Option<i64>,
     pub bitrate: Option<i64>,
     pub extracts: Option<String>,
-    pub raw_metadata: Option<String>,
-    pub hash: Option<String>,
-    pub resolve_status: ResolvedStatus,
 }
 
 impl FileScanCache {
@@ -116,16 +55,15 @@ impl FileScanCache {
             sample_rate: None,
             bitrate: None,
             extracts: None,
-            raw_metadata: None,
-            hash: None,
-            resolve_status: ResolvedStatus::UnResolved,
         }
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, FromRow)]
 pub struct FileInfo {
     pub id: i64,
+    pub book_id: i64,
+    pub author: String,
     pub title: String,
     pub series: String,
     pub file_path: String,
@@ -164,6 +102,12 @@ pub struct ChangeDto {
     pub change_type: ChangeType,
 
     pub file_ids: Vec<i64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_book_ids: Option<Vec<i64>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_book_id: Option<i64>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_author: Option<String>,

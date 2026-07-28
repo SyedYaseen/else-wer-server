@@ -5,6 +5,7 @@ rustybookshelf.db
 rustybookshelf.db-wal
 rustybookshelf.db-shm
 .env
+.env.docker
 plan.md
 covers
 backupdata
@@ -12,3 +13,9 @@ datatest
 /logs
 bookresmultipart.json
 .gitignore
+/audiobooks
+graphify-out/
+src/ui/node_modules/
+src/ui/dist/
+piconfig/else-wer.db
+todo/10_OFFLINE_MODE.md

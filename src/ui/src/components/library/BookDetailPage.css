@@ -1,0 +1,146 @@
+.book-detail-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-lg);
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+}
+
+.book-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+  color: var(--color-ink-subtle);
+  text-decoration: none;
+  font-size: var(--text-md);
+}
+
+.book-detail-header {
+  display: flex;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.book-detail-cover {
+  width: 140px;
+  aspect-ratio: 1 / 1.35;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--color-ink-hairline);
+  flex-shrink: 0;
+  background: var(--color-surface-deep);
+}
+
+.book-detail-cover-placeholder {
+  width: 140px;
+  aspect-ratio: 1 / 1.35;
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--color-ink-hairline);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-deep);
+  font-family: var(--font-serif);
+  font-size: 48px;
+  color: var(--color-ink-subtle);
+  opacity: 0.6;
+}
+
+.book-detail-title {
+  font-size: var(--text-xxl);
+  line-height: 1.25;
+  margin-bottom: var(--space-xs);
+}
+
+.book-detail-author {
+  font-size: var(--text-lg);
+  color: var(--color-ink-muted);
+  margin: 0 0 var(--space-xs);
+}
+
+.book-detail-meta {
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--color-ink-subtle);
+  margin: 0 0 2px;
+}
+
+.book-detail-actions {
+  margin-top: var(--space-md);
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.book-detail-download-progress {
+  margin-top: var(--space-sm);
+}
+
+.book-detail-download-error {
+  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--color-danger);
+}
+
+.book-detail-section-title {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-sm);
+}
+
+.book-detail-description {
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+  margin-bottom: var(--space-xl);
+  white-space: pre-line;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.file-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+}
+
+.file-list-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-list-duration {
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  flex-shrink: 0;
+}
+
+.bookmark-jump-btn {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.book-detail-delete-confirm-text {
+  color: var(--color-ink-muted);
+  font-size: var(--text-md);
+}
+
+.book-detail-delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+}

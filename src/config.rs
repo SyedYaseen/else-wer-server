@@ -5,22 +5,43 @@ pub struct Config {
     pub database_url: String,
     pub host: String,
     pub port: u16,
-    pub book_files: String,
-    pub jwt_secret: anyhow::Result<String>,
+    pub audiobook_location: String,
+    pub jwt_secret: String,
+    pub self_hosted: bool,
+    pub jwt_loc: String,
+    pub relay_uri: String,
+    pub pwa_dist_location: String,
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, anyhow::Error> {
         Ok(Self {
             database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "sqlite:./rustybookshelf.db".to_string()),
+                .unwrap_or_else(|_| "sqlite:./else-wer.db".to_string()),
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
                 .unwrap_or(3000),
-            book_files: env::var("AUDIOBOOKS_LOCATION").unwrap_or_else(|_| "data".to_string()),
-            jwt_secret: env::var("JWT_SECRET").with_context(|| "Please set JWT SECRET"),
+            audiobook_location: env::var("AUDIOBOOKS_LOCATION")
+                .unwrap_or_else(|_| "data".to_string()),
+            jwt_secret: env::var("JWT_SECRET").with_context(|| "Please set JWT_SECRET")?,
+            self_hosted: env::var("SELF_HOSTED")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(true),
+            jwt_loc: env::var("JWT_LOC").unwrap_or("creds/jwt.key".to_string()),
+            relay_uri: env::var("RELAY_URI").unwrap_or("http://localhost:9000/api".to_string()),
+            pwa_dist_location: env::var("PWA_DIST_LOCATION")
+                .unwrap_or_else(|_| "src/ui/dist".to_string()),
+            cors_allowed_origins: env::var("CORS_ALLOWED_ORIGINS")
+                .map(|s| {
+                    s.split(',')
+                        .map(|o| o.trim().to_string())
+                        .filter(|o| !o.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }
