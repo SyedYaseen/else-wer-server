@@ -1,6 +1,12 @@
 [Unit]
 Description=Else-Wer
 After=network.target
+# The audiobook library lives on the USB drive mounted here. Without this the
+# service starts happily against the bare mountpoint and serves 404s for every
+# stream and cover while looking healthy (fstab uses nofail, so boot is silent
+# about it too). Requires= + After= on home-pi-drv.mount: refuse to run without
+# the media.
+RequiresMountsFor=/home/pi/drv
 
 [Service]
 User=pi
@@ -11,3 +17,6 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
+# A dependency-ordered stop (drive dropped off the bus) is not a process exit, so
+# Restart=always does not bring us back. Being wanted by the mount does.
+WantedBy=home-pi-drv.mount

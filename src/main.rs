@@ -77,8 +77,13 @@ async fn main() -> anyhow::Result<()> {
     // Serves the src/ui static build (same-origin) at every path not under
     // /api; unmatched routes fall back to index.html so react-router's client-side routes work.
     let pwa_index = format!("{}/index.html", config.pwa_dist_location);
-    let spa_service = ServeDir::new(&config.pwa_dist_location)
-        .not_found_service(ServeFile::new(pwa_index));
+    // fallback(), not not_found_service(): the latter forces the response status to
+    // 404 even though the body is index.html, so every deep link (/player/16,
+    // /book/3) was served as "not found". Browsers still render it, but a 404 is not
+    // a cacheable navigation response — the PWA shell had to be refetched on every
+    // cold open of a deep link, and offline deep links failed outright.
+    let spa_service =
+        ServeDir::new(&config.pwa_dist_location).fallback(ServeFile::new(pwa_index));
 
     let app = Router::new()
         .nest("/api", api::routes().await)

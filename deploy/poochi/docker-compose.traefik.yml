@@ -1,0 +1,32 @@
+# Overlay that puts else-wer behind poochi's existing Traefik at
+# https://elsewer.syedyaseen.dev. NOT APPLIED YET -- it needs the Porkbun
+# certResolver added to /home/poochi/mz/proxy/traefik/traefik.yaml and the DNS
+# A record created first. See docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+#
+# Usage once those prerequisites are done:
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+#
+# The published 3030 port from the base file stays, so direct LAN access keeps
+# working alongside the hostname.
+services:
+  else-wer:
+    networks:
+      # Its own project network stays (services must list it explicitly once any
+      # networks key is present); mz-net is added purely so traefik can reach it.
+      - default
+      - mz-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mz-net"
+      - "traefik.http.routers.elsewer.rule=Host(`elsewer.syedyaseen.dev`)"
+      - "traefik.http.routers.elsewer.entrypoints=websecure"
+      - "traefik.http.routers.elsewer.tls=true"
+      # syedyaseen.dev is at Porkbun, not Cloudflare, so it cannot use the
+      # cfresolver that serves themizadah.com. Set at the router level so the
+      # websecure entrypoint's default resolver + themizadah wildcard are untouched.
+      - "traefik.http.routers.elsewer.tls.certresolver=porkbun"
+      - "traefik.http.services.elsewer.loadbalancer.server.port=3000"
+
+networks:
+  mz-net:
+    external: true

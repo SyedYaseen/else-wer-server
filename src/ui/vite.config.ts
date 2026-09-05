@@ -4,6 +4,12 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Surfaced on the Library page. A bare version string reads the same before and after a
+  // deploy, so it can't answer "is the build I'm looking at the one I just shipped?" — the
+  // timestamp is the part that actually settles it.
+  define: {
+    __APP_BUILD__: JSON.stringify(`v0.1 · ${new Date().toISOString().slice(0, 16).replace('T', ' ')}Z`),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -40,11 +46,12 @@ export default defineConfig({
               expiration: { maxEntries: 300, maxAgeSeconds: 30 * 24 * 60 * 60 },
             },
           },
-          {
-            // Range-streamed audio — never let the SW attempt to cache a 206 response.
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/stream/'),
-            handler: 'NetworkOnly',
-          },
+          // NOTE: there is deliberately no route for /api/stream/. Even 'NetworkOnly'
+          // routes the request *through* the service worker; with no matching route
+          // the SW never calls respondWith and the browser issues the byte-range
+          // request natively, which is one less hop on every seek. Downloaded books
+          // are unaffected either way — they play from blob: URLs out of IndexedDB,
+          // not from this path.
           {
             // Progress reads/writes must always hit the server — a cached response
             // here would silently desync playback position across devices.

@@ -467,6 +467,47 @@ fn audio_mime(path: &str) -> &'static str {
     }
 }
 
+// Cap on how much a single Range response will return. RFC 7233 lets a server
+// answer with a *narrower* range than asked for, and media elements handle that
+// by issuing a follow-up request when they need more.
+//
+// This keeps the Pi from streaming an 884 MB body out of a single request: with the
+// clamp the client chains 4 MiB responses instead, which is a kinder shape for a Pi
+// Zero 2 and costs one extra request per chunk. 4 MiB is >8 minutes of audio at the
+// 64 kbps these files run at.
+//
+// It is *not* a fix for the lock-screen playback bug, and must not be recorded as
+// one. Measurement showed the client buffers the same ~42 MB working set with or
+// without the clamp — that figure is the browser's own media buffer cap, so the
+// "reads until the pipe runs dry" theory this comment used to state was wrong. The
+// lock-screen symptom is the iOS audio session being released on pause; see
+// docs/todo/12_AUDIO_SESSION_KEEPALIVE.md.
+const RANGE_CHUNK_BYTES: u64 = 4 * 1024 * 1024;
+
+// Narrows an over-broad `Range` to at most RANGE_CHUNK_BYTES. Returns None — leave
+// the header alone — for anything that isn't a single explicit `bytes=START-[END]`:
+// suffix ranges (`bytes=-500`) and multipart ranges are rare here and not worth
+// reimplementing when ServeFile already handles them correctly.
+fn clamp_range(value: &str) -> Option<String> {
+    let spec = value.trim().strip_prefix("bytes=")?.trim();
+    if spec.contains(',') {
+        return None;
+    }
+    let (start, end) = spec.split_once('-')?;
+    let start: u64 = start.trim().parse().ok()?;
+    let max_end = start.saturating_add(RANGE_CHUNK_BYTES - 1);
+    match end.trim() {
+        // Open-ended (`bytes=N-`, what WebKit sends) — always worth bounding.
+        "" => Some(format!("bytes={start}-{max_end}")),
+        // Closed (`bytes=N-M`, what Chromium sends). Honour anything already
+        // within budget, including the `bytes=0-1` probe both browsers open with.
+        e => {
+            let end: u64 = e.parse().ok()?;
+            (end > max_end).then(|| format!("bytes={start}-{max_end}"))
+        }
+    }
+}
+
 // GET/HEAD /api/stream/{id} — id is the files PK. ServeFile provides RFC 7233
 // Range support (206/416, Accept-Ranges, If-Range, HEAD) with a streamed body;
 // used by both app streaming playback and the chunked download manager.
@@ -474,7 +515,7 @@ pub async fn stream_file(
     State(state): State<AppState>,
     StreamAuth(_claims): StreamAuth,
     Path(id): Path<i64>,
-    req: Request, // must stay last (FromRequest) — forwards the Range header to ServeFile
+    mut req: Request, // must stay last (FromRequest) — forwards the Range header to ServeFile
 ) -> Result<impl IntoResponse, ApiError> {
     let file_path = get_file_path_by_id(&state.db_pool, id).await?;
     if !PathBuf::from(&file_path).exists() {
@@ -484,6 +525,32 @@ pub async fn stream_file(
     let mime = audio_mime(&file_path)
         .parse::<mime::Mime>()
         .map_err(|e| ApiError::Internal(format!("bad mime: {e}")))?;
+
+    // A rangeless GET (the offline download manager's fetch) falls through
+    // untouched and still streams the whole file.
+    let requested = req
+        .headers()
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let clamped = requested.as_deref().and_then(clamp_range);
+    if let Some(ref narrowed) = clamped
+        && let Ok(v) = header::HeaderValue::from_str(narrowed)
+    {
+        req.headers_mut().insert(header::RANGE, v);
+    }
+
+    // Temporary instrumentation: the only way to tell a seek that never left the
+    // client from one the client asked for, and now also how fast the client is
+    // reading ahead — consecutive offsets for one file_id should advance at
+    // roughly playback rate, not megabytes a second.
+    // Remove once lock-screen resume and seeking are confirmed good on device.
+    tracing::info!(
+        file_id = id,
+        range = requested.as_deref().unwrap_or("none"),
+        served = clamped.as_deref().unwrap_or("as-requested"),
+        "stream range"
+    );
 
     ServeFile::new_with_mime(&file_path, &mime)
         .oneshot(req)
