@@ -9,7 +9,7 @@
   - Business/GA audit (2026-07-11): split into todo/6_SECURITY_HARDENING.md,
     todo/7_OSS_RELEASE_DOCS.md, todo/8_FRONTEND_TESTING.md, todo/9_FEATURE_GAPS.md
   - Host migration Pi Zero -> poochi (2026-09-05, in progress): docs/todo/14_POOCHI_MIGRATION.md
-  - elsewer.syedyaseen.dev hostname + TLS + WireGuard (planned): docs/todo/15_ELSEWER_HOSTNAME_TLS.md
+  - ew.syedyaseen.dev hostname + TLS wildcard + WireGuard (planned): docs/todo/15_ELSEWER_HOSTNAME_TLS.md
 - Done: L127
   - Organize author/book move+merge: L107
   - Manual chapter reordering: L121
@@ -119,10 +119,12 @@
   traefik.enable=false, user 1000:1000, host port 3030 (3000 is taken by mzbe on that box).
   Fresh DB by choice - no progress migration. Full detail + verification steps in
   docs/todo/14_POOCHI_MIGRATION.md.
-- [ ] elsewer.syedyaseen.dev over HTTPS, then WireGuard (planned, not started). Blocked on a
-  Porkbun certResolver in poochi's existing Traefik (syedyaseen.dev is Porkbun-hosted, the
-  running cfresolver is Cloudflare-only). deploy/poochi/docker-compose.traefik.yml is written
-  and ready to apply once that lands. Detail in docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+- [ ] ew.syedyaseen.dev over HTTPS via a *.syedyaseen.dev wildcard, then WireGuard (planned,
+  not started; revised 2026-09-06 - DNS moved to Cloudflare, Pi retiring so vw/jf need the
+  same wildcard). Blocked on a new cfdns DNS-01 resolver in poochi's existing Traefik
+  (cfresolver there is HTTP-01-only and serves themizadah.com - can't issue wildcards, stays
+  untouched). deploy/poochi/docker-compose.traefik.yml is written and ready to apply once
+  that lands. Detail in docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
 
 ## Done
 Author/book move + merge in Organize (2026-07-11, uncommitted): lets users move a book's or author's files to a
