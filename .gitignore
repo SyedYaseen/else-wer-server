@@ -21,4 +21,5 @@ piconfig/else-wer.db
 todo/10_OFFLINE_MODE.md
 # poochi deploy: DB, jwt key and generated covers live in the bind mount
 deploy/poochi/data/
+deploy/poochi/logs/
 selfIdentity.plist

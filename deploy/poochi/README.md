@@ -24,7 +24,9 @@ cd ~/projects/else-wer-server/deploy/poochi
 
 # Required: the ./data bind mount masks the image's build-time mkdir, so these
 # must exist on the host or the server can't write its DB, jwt key, or covers.
-mkdir -p data/covers data/creds
+# ./logs is likewise required -- init_logging() writes to a relative "logs" dir
+# (/app/logs in the container), root-owned in the image otherwise.
+mkdir -p data/covers data/creds logs
 
 cp .env.example .env
 sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
