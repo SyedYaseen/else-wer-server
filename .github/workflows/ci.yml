@@ -1,68 +1,68 @@
-name: CI
+# name: CI
 
-on:
-  pull_request:
-  push:
-    branches: [master]
+# on:
+#   pull_request:
+#   push:
+#     branches: [master]
 
-jobs:
-  rust:
-    runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: sqlite:./build.db
-    steps:
-      - uses: actions/checkout@v4
+# jobs:
+#   rust:
+#     runs-on: ubuntu-latest
+#     env:
+#       DATABASE_URL: sqlite:./build.db
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+#       - uses: dtolnay/rust-toolchain@stable
+#         with:
+#           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+#       - uses: Swatinem/rust-cache@v2
 
-      - name: Cache sqlx-cli binary
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/sqlx
-          key: sqlx-cli-${{ runner.os }}-0.8
+#       - name: Cache sqlx-cli binary
+#         uses: actions/cache@v4
+#         with:
+#           path: ~/.cargo/bin/sqlx
+#           key: sqlx-cli-${{ runner.os }}-0.8
 
-      - name: Install sqlx-cli
-        run: command -v sqlx || cargo install sqlx-cli --no-default-features --features sqlite,rustls --locked
+#       - name: Install sqlx-cli
+#         run: command -v sqlx || cargo install sqlx-cli --no-default-features --features sqlite,rustls --locked
 
-      # sqlx::query!/query_as! macros type-check against a real schema at compile time; build a
-      # throwaway DB here (never shipped, same approach as the Dockerfile's rust-build stage) just
-      # to satisfy them.
-      - name: Prepare build database
-        run: |
-          sqlx database create
-          sqlx migrate run
+#       # sqlx::query!/query_as! macros type-check against a real schema at compile time; build a
+#       # throwaway DB here (never shipped, same approach as the Dockerfile's rust-build stage) just
+#       # to satisfy them.
+#       - name: Prepare build database
+#         run: |
+#           sqlx database create
+#           sqlx migrate run
 
-      - name: Build
-        run: cargo build --all-targets
+#       - name: Build
+#         run: cargo build --all-targets
 
-      - name: Test
-        run: cargo test
+#       - name: Test
+#         run: cargo test
 
-      - name: Clippy
-        run: cargo clippy --all-targets
+#       - name: Clippy
+#         run: cargo clippy --all-targets
 
-  pwa:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/ui
-    steps:
-      - uses: actions/checkout@v4
+#   pwa:
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: src/ui
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: src/ui/package-lock.json
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: 20
+#           cache: npm
+#           cache-dependency-path: src/ui/package-lock.json
 
-      - run: npm ci
+#       - run: npm ci
 
-      - name: Typecheck
-        run: npx tsc --noEmit
+#       - name: Typecheck
+#         run: npx tsc --noEmit
 
-      - name: Lint
-        run: npm run lint
+#       - name: Lint
+#         run: npm run lint

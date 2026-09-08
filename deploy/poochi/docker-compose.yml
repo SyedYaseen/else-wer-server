@@ -1,0 +1,47 @@
+# else-wer on poochi (192.168.1.18), replacing the Pi Zero 2 W.
+#
+# Deliberately isolated from everything else already running on this box: its own
+# compose project, its own implicit bridge network, and traefik.enable=false. It
+# does not join mz-net (traefik/cloudflared/themizadah.com) or qbt_default
+# (gluetun/qbittorrent). Ingress for now is the published LAN port only; the
+# elsewer.syedyaseen.dev hostname is a separate, not-yet-applied overlay --
+# see docker-compose.traefik.yml and docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+services:
+  else-wer:
+    build:
+      context: ../..
+    image: else-wer:latest
+    container_name: else-wer
+    restart: unless-stopped
+    # Not root. This container writes into /home/poochi/hdd/bookshelf/audiobooks,
+    # which qbittorrent has bind-mounted whole as /data -- root-owned files
+    # appearing in that tree break its hardlinking. 1000:1000 is the poochi user,
+    # same as the jellyfin service on this host.
+    user: "1000:1000"
+    ports:
+      # 3000 on the host is already taken by mzbe; 3030 is free.
+      - "3030:3000"
+    env_file:
+      - .env
+    volumes:
+      # A bind, not a named volume: a named volume is created root-owned and the
+      # 1000:1000 process cannot write it. The Dockerfile's build-time
+      # `mkdir /data/covers /data/creds` is masked by this mount, so both dirs
+      # must exist on the host before first start (see README.md).
+      - ./data:/data
+      # rw: the organize/upload paths write here.
+      - /home/poochi/hdd/bookshelf/audiobooks:/audiobooks
+      # init_logging() (src/services/startup.rs) writes to a relative "logs" dir,
+      # i.e. /app/logs -- root-owned in the built image and unwritable by 1000:1000
+      # without this. Must exist on the host (see README.md) with poochi as owner.
+      - ./logs:/app/logs
+    labels:
+      # traefik runs --providers.docker=true here. traefik.yaml sets
+      # exposedByDefault: false, but be explicit anyway -- same as qbt does.
+      - "traefik.enable=false"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

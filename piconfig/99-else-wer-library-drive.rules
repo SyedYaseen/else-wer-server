@@ -1,0 +1,17 @@
+# Bring the audiobook library drive (and with it else-wer) back after a USB drop.
+#
+# On this Pi Zero 2 W everything hangs off a single dwc_otg root port: the library
+# drive and the Realtek RTL8153 ethernet adapter share one Genesys Logic hub. A hub
+# reset re-enumerates both, systemd unmounts home-pi-drv.mount, and else-wer.service
+# is stopped along with it (it has RequiresMountsFor=/home/pi/drv).
+#
+# The kernel re-attaches the disk on its own, but nothing then mounts it:
+#   - fstab uses `nofail`, so no boot target wants home-pi-drv.mount at runtime, and
+#   - a filesystem that reappears outside a systemd job only gets *marked* active,
+#     which does not run the mount's dependencies.
+# So the mount's WantedBy never fires and else-wer stays down until someone logs in.
+#
+# Matching the filesystem UUID (not /dev/sda1 — the kernel name is not stable across
+# re-enumeration) makes the device unit want the mount, so the mount runs as a real
+# job. That pulls in else-wer via WantedBy=home-pi-drv.mount in else-wer.service.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_FS_UUID}=="27cca5db-fbf5-420d-8abe-7c2ffb84d369", ENV{SYSTEMD_WANTS}+="home-pi-drv.mount"

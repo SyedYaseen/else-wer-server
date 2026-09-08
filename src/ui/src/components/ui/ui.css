@@ -335,6 +335,13 @@
   box-shadow: var(--shadow-md);
 }
 
+/* Modifier on .network-banner, same as .toast-error varies .toast. Danger rather
+   than warning: an unmounted drive won't clear on its own the way "retrying…" will. */
+.network-banner-error {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
 .reorder-list {
   display: flex;
   flex-direction: column;

@@ -20,6 +20,23 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
+Plans and the todo folder:
+
+- Any plan meant to outlive the current session goes in `docs/todo/<theme>.md` — one theme per
+  file, so each can be picked up independently by a different session or agent. Use the shape the
+  existing docs use: `Status`, `## Problem`, `## Approach`, file-level changes with real paths,
+  `## Open questions`, `## Verification`. Cross-link related docs by filename.
+- Before starting new work, check `docs/todo/` for a doc that already covers it and pick that up
+  instead of re-planning from scratch.
+- Keep the folder honest. Update `Status` as work lands, and delete a doc once its work has
+  shipped — a stale doc describing code that already exists is worse than no doc. Do the same
+  cleanup pass whenever you notice a doc has drifted from reality.
+- Executing several plans at once: an Opus agent oversees and fans the independent docs out to
+  lightweight sub-agents, one plan each, to keep token use down. An Opus sub-agent that itself
+  spawns smaller Sonnet agents is fine for a plan big enough to warrant it.
+- Never run two agents against the same files concurrently. Check the working tree first —
+  another session may already own an area, and half-finished work there will not be in git.
+
 ## Coding Guidelines
 
 - Ask for clarification if requirements are ambiguous.

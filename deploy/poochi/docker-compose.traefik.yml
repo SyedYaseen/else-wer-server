@@ -1,0 +1,38 @@
+# Overlay that puts else-wer behind poochi's existing Traefik at
+# https://ew.syedyaseen.dev. NOT APPLIED YET -- it needs syedyaseen.dev added to
+# entryPoints.websecure.http.tls.domains in /home/poochi/mz/proxy/traefik/traefik.yaml
+# (same cfresolver, no new resolver -- see that repo's commit ffd58ac for the pattern
+# themizadah.com already uses), the existing CF_DNS_API_TOKEN widened in Cloudflare's
+# dashboard to cover the syedyaseen.dev zone too, and the DNS wildcard record created.
+# See docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+#
+# Usage once those prerequisites are done:
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+#
+# The published 3030 port from the base file stays, so direct LAN access keeps
+# working alongside the hostname.
+services:
+  else-wer:
+    networks:
+      # Its own project network stays (services must list it explicitly once any
+      # networks key is present); mz-net is added purely so traefik can reach it.
+      - default
+      - mz-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mz-net"
+      - "traefik.http.routers.elsewer.rule=Host(`ew.syedyaseen.dev`)"
+      - "traefik.http.routers.elsewer.entrypoints=websecure"
+      - "traefik.http.routers.elsewer.tls=true"
+      # No tls.certresolver here on purpose -- traefik.yaml's own comment says
+      # routers must not set one, or they trigger a redundant per-router ACME
+      # order instead of using the entrypoint's pre-fetched wildcard. Leaving it
+      # unset makes this router inherit cfresolver's default cert list, and
+      # Traefik's SNI matching hands back the syedyaseen.dev wildcard (not
+      # themizadah's) for this Host -- same mechanism that already keeps
+      # themizadah.com and any future syedyaseen.dev subdomains isolated.
+      - "traefik.http.services.elsewer.loadbalancer.server.port=3000"
+
+networks:
+  mz-net:
+    external: true

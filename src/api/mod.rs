@@ -5,6 +5,8 @@ use axum::{
     routing::{delete, get, post, put},
 };
 use serde_json::json;
+use std::time::Duration;
+use tokio::time::timeout;
 use tower_http::services::ServeDir;
 pub mod api_error;
 mod audiobooks;
@@ -111,11 +113,53 @@ pub async fn routes() -> Router<AppState> {
 }
 
 // Unauthenticated liveness probe backing the client's server-reachability
-// indicator. No AuthUser extractor and no State access, so it's cheap enough
-// to poll every few seconds indefinitely. Deliberately separate from /hello
-// (a scratch/debug endpoint, not stable infra).
-async fn health_handler() -> impl IntoResponse {
-    Json(json!({ "status": "ok" }))
+// indicator. No AuthUser extractor, and the only state access is one small
+// indexed SELECT, so it's still cheap enough to poll every few seconds
+// indefinitely. Deliberately separate from /hello (a scratch/debug endpoint,
+// not stable infra).
+//
+// Always 200, including when a library's disk is unreachable: the client only
+// inspects res.ok, so a non-2xx here would surface as "can't reach the server"
+// and bury the more specific media_ok signal we're adding. media_ok is null when
+// the check couldn't be completed.
+async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
+    match unavailable_libraries(&state.db_pool).await {
+        Some(names) => Json(json!({
+            "status": "ok",
+            "media_ok": names.is_empty(),
+            "media_unavailable": names,
+        })),
+        None => Json(json!({ "status": "ok", "media_ok": null })),
+    }
+}
+
+/// Names of libraries whose root isn't currently a reachable directory — the signal
+/// that a media drive has been unmounted. Same reachability notion `scan_files` uses
+/// before it refuses to treat an unreachable path as a mass deletion.
+///
+/// `None` means the check itself couldn't run, reported as "unknown" rather than
+/// "broken" so a transient DB hiccup never shows a scary banner.
+///
+/// Names, not paths: this endpoint is unauthenticated, and the name is enough to say
+/// which library is affected without publishing the server's directory layout.
+///
+/// tokio::fs behind a timeout rather than `Path::is_dir()` — a wedged USB bus can make
+/// a stat block, and blocking here would stall the runtime and blow the client's 2.5s
+/// probe timeout, turning a degraded drive into a false "server unreachable".
+async fn unavailable_libraries(db: &sqlx::SqlitePool) -> Option<Vec<String>> {
+    const STAT_TIMEOUT: Duration = Duration::from_millis(500);
+
+    let libraries = crate::db::libraries::list_libraries(db).await.ok()?;
+    let mut unavailable = Vec::new();
+    for library in libraries {
+        let reachable = timeout(STAT_TIMEOUT, tokio::fs::metadata(&library.path))
+            .await
+            .is_ok_and(|res| res.is_ok_and(|meta| meta.is_dir()));
+        if !reachable {
+            unavailable.push(library.name);
+        }
+    }
+    Some(unavailable)
 }
 
 async fn hello(State(_state): State<AppState>) -> impl IntoResponse {

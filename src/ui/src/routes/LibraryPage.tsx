@@ -134,6 +134,7 @@ export function LibraryPage() {
     <div className="library-page">
       <div className="library-header">
         <div>
+          <p className="library-build">{__APP_BUILD__}</p>
           <h1 className="library-title">Library</h1>
           <p className="library-subtitle">Signed in as {username}</p>
           {books.length > 0 && (

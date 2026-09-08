@@ -8,7 +8,9 @@
   - Lightweight web PWA / Organize: L104
   - Business/GA audit (2026-07-11): split into todo/6_SECURITY_HARDENING.md,
     todo/7_OSS_RELEASE_DOCS.md, todo/8_FRONTEND_TESTING.md, todo/9_FEATURE_GAPS.md
-- Done: L106
+  - Host migration Pi Zero -> poochi (2026-09-05, in progress): docs/todo/14_POOCHI_MIGRATION.md
+  - ew.syedyaseen.dev hostname + TLS wildcard + WireGuard (planned): docs/todo/15_ELSEWER_HOSTNAME_TLS.md
+- Done: L127
   - Organize author/book move+merge: L107
   - Manual chapter reordering: L121
   - file_scan_cache removal: L139
@@ -108,6 +110,21 @@
 - [ ] Unified file serving: /api/stream/{id} (RFC 7233) for streaming + downloads; legacy download_chunk/get_file_size removed; app DownloadManager migrated + streaming playback — plan: todo/1_STREAMING_PLAN.md (CODE-COMPLETE 2026-07-06: server Phases 1-3 validated, app Phases 4-5 done + tsc clean; REMAINING: on-device validation Phases 4.5/6 by user)
 - [ ] Metadata reconcile: folder-identity book grouping (fixes 278-single-file-book regression) + series match API + per-folder metadata.json — full plan: todo/2_METADATA_RECONCILE.md (NOT STARTED in this checkout 2026-07-06: was implemented+verified once in an isolated cloud sandbox with no git remote, so that work never left the sandbox and is lost; needs redo here from the plan)
 - [x] Lightweight web PWA (iOS stopgap: login/library/player) + metadata editor/reorganizer (replaces else-wer-web prototype) — new sibling project else-wer-pwa (Vite+React SPA), embedded in this server via ServeDir+SPA fallback — full plan: todo/3_WEB_PWA_PLAN.md (ALL PHASES 0-4 DONE 2026-07-08: scaffold/auth/SPA fallback + Library + full Player + PWA manifest/icons/SW + Organize (metadata match/rename/move/merge, selection+action-sheet UX instead of drag/drop since native HTML5 DnD doesn't work on iOS Safari), verified live via the actual Rust server; REMAINING for user: iOS "Add to Home Screen" on-device check, and exercising a real rename/move/merge/match through the Organize UI against the live library)
+
+- [ ] Host migration: Pi Zero 2 W -> poochi (192.168.1.18) (2026-09-05). The Pi's USB hub
+  keeps dropping the library drive and ethernet together, taking the service down; moving to
+  the always-on Ubuntu box instead. Library merged from the Pi's drive (mounted read-only at
+  /mnt/elsewer-src) into /home/poochi/hdd/bookshelf/audiobooks - 1,106 new files / 33G, zero
+  overwrites. Deploy is deploy/poochi/ : own compose project, own bridge network,
+  traefik.enable=false, user 1000:1000, host port 3030 (3000 is taken by mzbe on that box).
+  Fresh DB by choice - no progress migration. Full detail + verification steps in
+  docs/todo/14_POOCHI_MIGRATION.md.
+- [ ] ew.syedyaseen.dev over HTTPS via a *.syedyaseen.dev wildcard, then WireGuard (planned,
+  not started; revised 2026-09-06 - DNS moved to Cloudflare, Pi retiring so vw/jf need the
+  same wildcard). Blocked on a new cfdns DNS-01 resolver in poochi's existing Traefik
+  (cfresolver there is HTTP-01-only and serves themizadah.com - can't issue wildcards, stays
+  untouched). deploy/poochi/docker-compose.traefik.yml is written and ready to apply once
+  that lands. Detail in docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
 
 ## Done
 Author/book move + merge in Organize (2026-07-11, uncommitted): lets users move a book's or author's files to a

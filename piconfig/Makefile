@@ -2,6 +2,7 @@
 #
 # One-time setup on a fresh Pi:
 #   make install-unit   # installs the systemd unit (else-wer.service in this dir)
+#   make install-udev   # installs the udev rule that remounts the library drive after a USB drop
 # Every deploy after that:
 #   make deploy          # builds + ships server binary and pwa static build, restarts service
 #   make status / logs
@@ -22,7 +23,7 @@ PWA_DIR        := ../src/ui
 TARGET         := aarch64-unknown-linux-gnu
 SERVER_BIN     := $(SERVER_DIR)/target/$(TARGET)/release/else-wer
 
-.PHONY: deploy build-server build-pwa deploy-server deploy-pwa remote-env install-unit logs status dev
+.PHONY: deploy build-server build-pwa deploy-server deploy-pwa remote-env install-unit install-udev logs status dev
 
 deploy: deploy-pwa deploy-server
 
@@ -59,6 +60,16 @@ dev:
 install-unit:
 	scp else-wer.service $(PI):/tmp/else-wer.service
 	ssh $(PI) 'sudo mv /tmp/else-wer.service /etc/systemd/system/else-wer.service && sudo systemctl daemon-reload'
+
+# Auto-remount the library drive after a USB drop, which restarts else-wer with it.
+# See the comments in the rules file. Independent of install-unit, but pointless
+# without it: the rule starts the mount, the unit's WantedBy= starts the server.
+install-udev:
+	scp 99-else-wer-library-drive.rules $(PI):/tmp/99-else-wer-library-drive.rules
+	ssh $(PI) 'sudo install -o root -g root -m 644 /tmp/99-else-wer-library-drive.rules \
+		/etc/udev/rules.d/99-else-wer-library-drive.rules \
+		&& rm -f /tmp/99-else-wer-library-drive.rules \
+		&& sudo udevadm control --reload-rules'
 
 logs:
 	ssh $(PI) 'journalctl -u else-wer.service -f'

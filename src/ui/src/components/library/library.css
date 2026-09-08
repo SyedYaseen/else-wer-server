@@ -38,6 +38,14 @@
   margin: 4px 0 0;
 }
 
+/* Deployed-build marker — see the `define` block in vite.config.ts. */
+.library-build {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-ink-subtle);
+  margin: 0 0 2px;
+}
+
 .library-actions {
   display: flex;
   gap: var(--space-sm);
