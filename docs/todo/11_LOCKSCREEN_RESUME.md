@@ -4,6 +4,12 @@
 > Round 5 established the cause is the iOS audio session being released on pause, not memory
 > pressure. Rounds 3–4 below are refuted; rounds 1–2 shipped real save-path fixes and stand.
 > Start at doc 12.
+>
+> **The "seeker right, plays from chapter start" symptom is solved — see Round 6 (2026-09-08),
+> immediately below.** It was WebKit dropping a `currentTime` assigned before metadata, found
+> by logging the `Range` header rather than by inference, and it was unrelated to everything
+> rounds 3–5 pursued. Round 6 also corrects this document's "these MP3s are VBR with no Xing
+> header" premise, which is false for the book every round was tested against.
 
 Diagnosed 2026-08-15, revised 2026-08-16 (round 4). Rounds 1 and 2 fixed real defects in
 the save path — the `progress` table is clean as a result — but neither addressed the
@@ -32,6 +38,93 @@ the fix to the server. **Start at "Round 4"**; round 3 below is kept for the evi
       playback, so nothing was measured
 - [ ] If reloads persist, stop — see "If the reloads persist"
 - [ ] Remove instrumentation (`stream range` log, `?boot=1`) once confirmed
+- [x] **Round 6:** measured the Range header at the moment of failure — cold load asks
+      `bytes=0-` and never seeks (see Round 6)
+- [x] **Round 6:** `#t=` media-fragment start position — fixes the seek symptom on iOS,
+      confirmed on device
+- [x] **Round 6:** restored the shared `updated_at`, the `loading` guard and `clamp_range`
+      that the baseline reset had dropped
+- [ ] **Round 6:** restore the other seven fixes the reset removed — `effectiveDuration`,
+      `updatePositionState`, chapter lock-screen title, `preload='metadata'`, prefetch/warm,
+      `seek`/`skip` saves, `pagehide` save, end-of-book `playbackState`
+- [ ] **Round 6:** confirm cross-device progress sync with only one device playing at a time
+
+## Round 6 (2026-09-08) — **the seek symptom is solved**
+
+Symptom as reported: the seeker shows the correct resume point but audio plays from the start
+of the chapter. iOS Chrome deterministically, on both cold resume and manual drag-seek; iOS
+Safari only after the page had been backgrounded. Android, laptop, and Safari's first play of
+a session were always fine.
+
+### First: everything rounds 1–5 blamed was cleared by direct test
+
+Branch `player-engine-baseline-reset` (commit `ded0ada`) reset `engine.ts` and `stream_file`
+to their pre-`e578e8a` state — no `applyPendingStart`, no `loading`/`pendingStartSec`, no
+`RANGE_CHUNK_BYTES`, no `resumeAudio`. **The bug reproduced unchanged.** So it predates this
+entire investigation, and none of the lock-screen work caused it. Service-worker interference
+was separately ruled out: `vite.config.ts` has no route for `/api/stream/`.
+
+### The measurement nobody had taken
+
+Six rounds inferred; none had logged what byte range the phone actually asks for. With
+`stream range` logging on, resuming file 1309 at `progress_ms: 397072`:
+
+```
+05:39:55  file=1309  req=bytes=0-1            206  cr=bytes 0-1/11015163
+05:39:55  file=1309  req=bytes=0-11015162     206  cr=bytes 0-11015162/11015163   <- cold load
+05:40:09  file=1309  req=bytes=0-1            206  cr=bytes 0-1/11015163
+05:40:09  file=1309  req=bytes=3407872-...    206  cr=bytes 3407872-11015162/...  <- retry
+05:40:10  file=1309  req=bytes=2200112-3407871 206                                <- gap fill
+```
+
+The cold load asks for **the whole file from byte 0 and never issues a seek at all**, while
+the store holds 397 s. The retry asks for byte 3407872 — exactly the 64 KiB-aligned floor of
+the true offset, `259275 + 397.072 × 8000 = 3435851` — and then played forward at precisely
+1x, `progress_ms` going 397072 → 758321 over 361 s of wall clock. The client can compute the
+right offset. The assignment was being dropped before it ever reached the network.
+
+### Cause
+
+`audio.currentTime = startSec` is assigned immediately after `audio.src`, while `readyState`
+is `HAVE_NOTHING`. Per spec that should become the element's *default playback start
+position*. WebKit ignores it. Chrome and Android honour it — hence iOS-only. A warmed element
+sometimes succeeds, which is why Safari failed only after backgrounding and why the symptom
+looked intermittent.
+
+Note this is **not** new information to the codebase: `applySource` already carried the
+comment "WebKit ignores it this early, so 'loadedmetadata' re-applies it". That re-seek alone
+was on the failing build and was **not sufficient**.
+
+### Fix
+
+`withStartFragment()` in `src/ui/src/player/engine.ts` appends a Media Fragments URI
+(`#t=<sec>`) to the source, so WebKit applies the start position while parsing the URL rather
+than through the JS setter. `applyPendingStart()` on `loadedmetadata` is kept as the second
+belt. A start of 0 (chapter advance) gets neither, so that path is unchanged. The fragment
+never reaches the server. **Confirmed working on device.**
+
+`audio.currentSrc === offlineBlobUrl` in the `error` listener became `startsWith` — the
+source now carries a fragment.
+
+### Regression introduced by the reset, and fixed here
+
+The reset was a diagnostic instrument and reverted eight unrelated fixes with the suspect
+code. One broke cross-device sync and was reported immediately: `saveProgress` lost its shared
+`updated_at`, so the server row was stamped with the server's clock (`CURRENT_TIMESTAMP` in
+`upsert_progress`) while the localStorage row for the same save carried the client's.
+`reconcileProgress` compares those two directly, so clock skew decided which side won, in
+either direction, and nothing converged. Restored, along with the `loading` guard and the
+`atSec` parameter. `RANGE_CHUNK_BYTES` and `clamp_range` restored verbatim at 4 MiB.
+
+**Still reverted, to be restored in a follow-up pass:** `effectiveDuration()`,
+`updatePositionState()`, chapter name as lock-screen title, `preload = 'metadata'`,
+`prefetchNext`/`warmNextStream`, saves on `seek`/`skip`, the `pagehide` save listener, and
+`playbackState = 'none'` at end of book.
+
+### Method note
+
+Six rounds of inference produced six wrong answers. One log line produced the right one in a
+single test. When a symptom crosses a process boundary, measure at the boundary first.
 
 ## Round 4 (2026-08-16)
 
@@ -67,10 +160,19 @@ The reload it causes is visible in the same log, same session:
 06:17:59  /api/stream/10        <- fresh <audio>, restarted
 ```
 
-**Why it reads unboundedly:** these MP3s are VBR with no Xing/TOC header — the same defect
+**Why it reads unboundedly:** ~~these MP3s are VBR with no Xing/TOC header~~ — the same defect
 that makes `duration` come back `Infinity` and forced `effectiveDuration()` into existence.
 With no byte↔time map the browser can't convert "buffer N seconds ahead" into a byte
 budget, so it reads until the pipe runs dry.
+
+> **Over-generalised — corrected in Round 6.** This holds for `file_id=10`, an 884 MB
+> 30-hour single file, and was wrongly extended to the whole library. It is false for the
+> book these rounds were actually tested against: file 1309 (*Persepolis Rising*, ch. 15) is
+> MPEG2 Layer III, 64 kbps **CBR**, 22050 Hz, carrying a complete `Info` header with frame
+> count, byte count, TOC and quality flags, starting at byte 259275 after a 253 KB ID3v2
+> tag. Its duration is well-defined and its byte↔time map is exact. `effectiveDuration()` is
+> still worth keeping for files like 10, but the "no Xing header" premise must not be used to
+> explain behaviour on files that have one.
 
 ### The fix: clamp the range server-side
 
@@ -333,7 +435,8 @@ WebKit routinely drops it.
 ### 5. Seeker (symptom 3)
 
 - `audio.duration || 0` passed `Infinity` through. WebKit reports `Infinity` for a streamed
-  VBR MP3 with no Xing header; React renders `max="Infinity"`, the browser rejects it.
+  VBR MP3 with no Xing header (true of some files, e.g. `file_id=10`, but not all — see the
+  Round 6 correction above); React renders `max="Infinity"`, the browser rejects it.
 - While the duration was unusable the slider still had `max={1}`, so a drag committed a
   seek into 0..1 — a third route to "starts from the beginning".
 - `seeking` was only cleared on `pointerup`/`keyup`; lose the pointer any other way and it

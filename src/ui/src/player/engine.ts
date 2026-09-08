@@ -52,21 +52,38 @@ export function saveProgressNow(): void {
   saveProgress(false);
 }
 
-function saveProgress(complete: boolean) {
+// `atSec` defaults to the store's position; callers that already know where the
+// element is headed pass it explicitly, because the store only catches up on the
+// next 'timeupdate' (see applyPendingStart).
+function saveProgress(complete: boolean, atSec?: number) {
+  // Suppressed while a file is loading: assigning audio.src fires a 'pause' event
+  // (and so a save) at a point where the store already points at the new file but
+  // its currentTime has been reset to 0 by setIndex — which would persist
+  // progress_ms: 0 for a book just opened part-way through, and push that 0 out to
+  // every other device.
+  if (loading) return;
   const { book, files, index, currentTime } = usePlayerStore.getState();
   const file = files[index];
   if (!book || !file) return;
   const listened_delta_ms = accumulatedListenedMs > 0 ? Math.round(accumulatedListenedMs) : undefined;
   accumulatedListenedMs = 0;
+  // One shared timestamp for both writes, so the localStorage row and the server
+  // row are last-write-wins comparable no matter which side is consulted later.
+  // Without it the server row is stamped with the server's clock (CURRENT_TIMESTAMP
+  // in upsert_progress) while the local row carries the client's, and
+  // reconcileProgress then compares two different clocks — which is what stopped
+  // progress syncing between devices.
+  const updated_at = new Date().toISOString();
   const payload = {
     book_id: book.id,
     file_id: file.id,
-    progress_ms: Math.floor(currentTime * 1000),
+    progress_ms: Math.floor((atSec ?? currentTime) * 1000),
     complete,
+    updated_at,
     ...(listened_delta_ms !== undefined ? { listened_delta_ms } : {}),
   };
   updateProgress(payload).catch((e) => console.error('progress save failed', e));
-  saveLocalProgress({ id: 0, user_id: 0, ...payload, updated_at: new Date().toISOString() });
+  saveLocalProgress({ id: 0, user_id: 0, ...payload });
 }
 
 function updateMediaSessionMetadata() {
@@ -88,6 +105,53 @@ function updateMediaSessionMetadata() {
 // Guards against a stale async blob lookup applying after a newer loadFile call.
 let loadSeq = 0;
 
+// Set from the moment a new src is assigned until its start position has been
+// applied — see saveProgress. The start position is held alongside it because
+// WebKit drops a currentTime set while readyState is HAVE_NOTHING, so it has to
+// be re-applied once metadata arrives.
+let loading = false;
+let pendingStartSec = 0;
+
+// iOS WebKit silently drops `audio.currentTime = n` when it is assigned right
+// after `audio.src` — readyState is still HAVE_NOTHING there, so per spec the
+// value should become the element's "default playback start position", and
+// WebKit does not apply it. Measured on iOS Chrome resuming file 1309 at 397s:
+// the element requested `bytes=0-` and played from the chapter start while the
+// store still held 397s. That is exactly the "seeker correct, audio from the
+// chapter start" symptom. Desktop and Android honour the early assignment,
+// which is why only iOS is affected.
+//
+// Two independent belts, so resuming does not depend on WebKit honouring either
+// one:
+//   1. a media-fragment URI (`#t=`), which WebKit applies while parsing the
+//      source URL rather than through the JS setter;
+//   2. a one-shot re-seek on `loadedmetadata`, by which point readyState is
+//      >= HAVE_METADATA and a seek is honoured.
+// A start of 0 (chapter advance) adds neither, so that path is unchanged.
+function withStartFragment(url: string, startSec: number): string {
+  return startSec > 0 ? `${url}#t=${startSec.toFixed(3)}` : url;
+}
+
+// Re-applies the requested start position once the element can actually seek,
+// then records the book/file as most-recently-played at that position. Driven by
+// the single module-level 'loadedmetadata' listener below rather than a per-load
+// one: a load that is replaced before metadata arrives is simply superseded when
+// the next loadFile re-arms `loading`, so nothing is left attached or stuck on.
+function applyPendingStart() {
+  if (!loading) return;
+  if (Math.abs(audio.currentTime - pendingStartSec) > 1) {
+    audio.currentTime = pendingStartSec;
+  }
+  loading = false;
+  // Deliberately reports pendingStartSec rather than reading audio.currentTime
+  // back. A seek is applied asynchronously — while the element is still buffering
+  // its first bytes currentTime can still read 0 for a moment after the
+  // assignment above, and saving that reading is what put books back at their
+  // start: the 0 reached the server, and the next load resumed from it.
+  lastSavedSec = Math.floor(pendingStartSec);
+  saveProgress(false, pendingStartSec);
+}
+
 function loadFile(index: number, startSec: number, autoplay: boolean) {
   const { files } = usePlayerStore.getState();
   const file = files[index];
@@ -96,6 +160,8 @@ function loadFile(index: number, startSec: number, autoplay: boolean) {
   lastSaveWallClockMs = null;
   accumulatedListenedMs = 0;
   usePlayerStore.getState().setIndex(index);
+  loading = true;
+  pendingStartSec = startSec;
   const seq = ++loadSeq;
   // Prefer a downloaded local copy outright instead of waiting for a network
   // error: iOS Safari fires the <audio> error event late or not at all for an
@@ -107,10 +173,13 @@ function loadFile(index: number, startSec: number, autoplay: boolean) {
       revokeOfflineBlobUrl();
       if (blob) {
         offlineBlobUrl = URL.createObjectURL(blob);
-        audio.src = offlineBlobUrl;
+        audio.src = withStartFragment(offlineBlobUrl, startSec);
       } else {
-        audio.src = streamUrl(file.id);
+        audio.src = withStartFragment(streamUrl(file.id), startSec);
       }
+      // Honoured by Chrome as the default playback start position; WebKit ignores
+      // it this early, which is why the source also carries a `#t=` fragment and
+      // 'loadedmetadata' re-applies it (see applyPendingStart).
       audio.currentTime = startSec;
       audio.playbackRate = usePlayerStore.getState().rate;
       if (autoplay) audio.play().catch((e) => console.error('play failed', e));
@@ -128,10 +197,14 @@ async function tryOfflineFallback() {
   if (!book || !file) return;
   const blob = await getOfflineFileBlob(file.id);
   if (!blob) return;
-  const resumeSec = currentTime;
+  // If the stream died before its start position was ever applied, that pending
+  // position — not the element's 0 — is what this fallback has to resume from.
+  const resumeSec = loading ? pendingStartSec : currentTime;
   revokeOfflineBlobUrl();
   offlineBlobUrl = URL.createObjectURL(blob);
-  audio.src = offlineBlobUrl;
+  audio.src = withStartFragment(offlineBlobUrl, resumeSec);
+  loading = true;
+  pendingStartSec = resumeSec;
   audio.currentTime = resumeSec;
   if (playing) audio.play().catch((e) => console.error('play failed', e));
 }
@@ -152,6 +225,9 @@ export function togglePlay() {
 
 export function seek(sec: number) {
   const wasPlaying = !audio.paused;
+  // Seeking a file that hasn't loaded yet redirects where it will start, rather
+  // than being overwritten by the pending start position a moment later.
+  if (loading) pendingStartSec = sec;
   audio.currentTime = sec;
   if (wasPlaying) audio.play().catch((e) => console.error('play failed', e));
 }
@@ -159,7 +235,9 @@ export function seek(sec: number) {
 export function skip(deltaSec: number) {
   const d = audio.duration || 0;
   const target = audio.currentTime + deltaSec;
-  audio.currentTime = d > 0 ? Math.min(Math.max(target, 0), d) : Math.max(target, 0);
+  const sec = d > 0 ? Math.min(Math.max(target, 0), d) : Math.max(target, 0);
+  if (loading) pendingStartSec = sec;
+  audio.currentTime = sec;
 }
 
 export function setRate(rate: number) {
@@ -196,6 +274,7 @@ audio.addEventListener('timeupdate', () => {
   }
 });
 audio.addEventListener('loadedmetadata', () => {
+  applyPendingStart();
   usePlayerStore.getState().setTime(audio.currentTime, audio.duration || 0);
 });
 audio.addEventListener('play', () => usePlayerStore.getState().setPlaying(true));
@@ -204,7 +283,8 @@ audio.addEventListener('pause', () => {
   saveProgress(isNearEnd(audio.currentTime, audio.duration || 0));
 });
 audio.addEventListener('error', () => {
-  if (offlineBlobUrl && audio.currentSrc === offlineBlobUrl) return;
+  // startsWith, not ===: the source now carries a `#t=` media fragment.
+  if (offlineBlobUrl && audio.currentSrc.startsWith(offlineBlobUrl)) return;
   tryOfflineFallback().catch((e) => console.error('offline fallback failed', e));
 });
 audio.addEventListener('ended', () => {
