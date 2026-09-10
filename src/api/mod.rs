@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
-    response::{Html, IntoResponse},
+    response::IntoResponse,
     routing::{delete, get, post, put},
 };
 use serde_json::json;
@@ -47,7 +47,6 @@ use audiobooks::scan_files_handler;
 pub async fn routes() -> Router<AppState> {
     Router::new()
         .nest_service("/covers", ServeDir::new("covers"))
-        .route("/hello", get(hello))
         .route("/health", get(health_handler))
         // bookscan + edit
         .route("/scan_files", get(scan_files_handler))
@@ -115,8 +114,7 @@ pub async fn routes() -> Router<AppState> {
 // Unauthenticated liveness probe backing the client's server-reachability
 // indicator. No AuthUser extractor, and the only state access is one small
 // indexed SELECT, so it's still cheap enough to poll every few seconds
-// indefinitely. Deliberately separate from /hello (a scratch/debug endpoint,
-// not stable infra).
+// indefinitely.
 //
 // Always 200, including when a library's disk is unreachable: the client only
 // inspects res.ok, so a non-2xx here would surface as "can't reach the server"
@@ -162,20 +160,3 @@ async fn unavailable_libraries(db: &sqlx::SqlitePool) -> Option<Vec<String>> {
     Some(unavailable)
 }
 
-async fn hello(State(_state): State<AppState>) -> impl IntoResponse {
-    // println!(
-    //     "Hello {}, role: {} id: {}",
-    //     claims.username, claims.role, claims.sub
-    // );
-    // println!("{}", state.config.book_files);
-    // let curr_dir = std::env::current_dir().unwrap();
-    // let src_p = "data/AdrianTchaikovsky/Elder Race [2021]/cover.jpg";
-    // let dest_p = "covers/test.jpg";
-
-    // let source = std::env::current_dir().unwrap().join(&src_p);
-    // let target = curr_dir.clone().join(&dest_p);
-    // info!("IN hello endpoint");
-    // tracing::error!("IN hello endpoint");
-    // ApiError::Internal("Soething went".to_string())
-    Html("<h1>Hello</h1>")
-}

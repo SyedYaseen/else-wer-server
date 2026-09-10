@@ -5,10 +5,6 @@
 
 @token = eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjEsInJvbGUiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJleHAiOjE3NzQwMjEwNTUsImlhdCI6MTc3MzkzNDY1NX0.LquTS8w-2_kj71B_-qg4f9GmAfaQs0pDRVe2UBWt7pw
 
-# @name hello
-GET {{base_url}}/hello
-
-###
 ### Group: Auth
 ###
 
