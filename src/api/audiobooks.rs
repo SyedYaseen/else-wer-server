@@ -538,7 +538,18 @@ pub async fn stream_file(
         .get(header::RANGE)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let clamped = requested.as_deref().and_then(clamp_range);
+    // The clamp is for browsers (the PWA), which re-request the remainder after a short 206.
+    // The app's player (Media3/ExoPlayer inside expo-audio) does not: it takes the 4 MiB reply
+    // to an open-ended `bytes=N-` as end of file, and audio stops there while its clock keeps
+    // running (device-reproduced 2026-09-12). It reads one connection at listening pace, so an
+    // unclamped reply doesn't push the whole file at once. The app authenticates with an
+    // Authorization header; `<audio src>` can't set one, so the PWA always uses `?token=`.
+    let from_app = req.headers().contains_key(header::AUTHORIZATION);
+    let clamped = if from_app {
+        None
+    } else {
+        requested.as_deref().and_then(clamp_range)
+    };
     if let Some(ref narrowed) = clamped
         && let Ok(v) = header::HeaderValue::from_str(narrowed)
     {
