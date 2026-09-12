@@ -1,3 +1,5 @@
+MOUNTPOINT="${MOUNTPOINT:-/home/pi/drv}"
+
 # Detect the first USB disk (e.g., sda)
 DISK=$(lsblk -o NAME,TRAN,TYPE -nr | awk '$2=="usb" && $3=="disk"{print $1; exit}')
 

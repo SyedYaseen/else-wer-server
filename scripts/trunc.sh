@@ -1,12 +1,9 @@
 #!/bin/bash
 
 # Truncate all tables in SQLite database
-# Usage: ./truncate_db.sh <database_path>
-# Example: ./truncate_db.sh ./sqlite.db
+# Usage: scripts/trunc.sh [database_path]   (or `make db-truncate DB=...`)
 
-# DB_PATH="${1:-.sqlite.db}"
-
-DB_PATH="/home/loop/p/else-wer/else-wer-server/else-wer.db"
+DB_PATH="${1:-./else-wer.db}"
 if [ ! -f "$DB_PATH" ]; then
     echo "Error: Database file not found: $DB_PATH"
     exit 1
