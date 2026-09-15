@@ -1,21 +1,39 @@
+# else-wer on any x86_64 Docker host. Everything host-specific comes from .env in this
+# directory (see .env.example), which compose reads for the ${...} values below and also
+# passes into the container. Quickstart: cp .env.example .env && docker compose up -d --build
+#
+# DATA_DIR / LOGS_DIR: a bare name is a named volume, a path is a bind mount.
+# Default project name and library path match the old root compose file, so an existing
+# install keeps its else-wer-server_else-wer-data volume and repo-root audiobooks/.
+name: ${COMPOSE_PROJECT_NAME:-else-wer-server}
+
 services:
   else-wer:
-    build: .
+    build: ../..
     image: else-wer:latest
+    container_name: ${CONTAINER_NAME:-else-wer}
     restart: unless-stopped
+    user: "${PUID:-0}:${PGID:-0}"
     ports:
-      - "3000:3000"
+      - "${HOST_PORT:-3000}:3000"
     env_file:
-      - .env.docker
+      - .env
     volumes:
-      - else-wer-data:/data
-      - ./audiobooks:/audiobooks
+      - ${DATA_DIR:-else-wer-data}:/data
+      # rw: the organize/upload paths write here.
+      - ${AUDIOBOOKS_DIR:-../../audiobooks}:/audiobooks
+      # init_logging() (src/services/startup.rs) writes to a relative "logs" dir, i.e. /app/logs.
+      - ${LOGS_DIR:-else-wer-logs}:/app/logs
+    labels:
+      # Opt out of any Traefik running with the docker provider; the traefik overlay flips it.
+      - "traefik.enable=false"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 30s
 
 volumes:
   else-wer-data:
+  else-wer-logs:

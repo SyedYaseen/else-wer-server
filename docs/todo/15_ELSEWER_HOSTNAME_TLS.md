@@ -100,11 +100,11 @@ anything else). Watch `docker logs -f traefik` for the ACME order.
 ### 3. else-wer — apply the overlay
 
 ```sh
-cd ~/projects/else-wer-server/deploy/poochi
-docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+cd ~/projects/else-wer-server
+make docker-up TRAEFIK=1
 ```
 
-`deploy/poochi/docker-compose.traefik.yml` flips `traefik.enable=true`, joins `mz-net` as a
+`deploy/docker/docker-compose.traefik.yml` flips `traefik.enable=true`, joins `mz-net` as a
 *second* network (its own project network stays), pins `traefik.docker.network=mz-net` so
 Traefik dials the right interface, and routes `Host(\`ew.syedyaseen.dev\`)` → container port
 3000, with `tls.certresolver=cfdns`. Host port 3030 stays published, so direct LAN access

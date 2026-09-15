@@ -11,7 +11,6 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, QueryBuilder, Sqlite, SqliteConnection, SqlitePool};
 use std::collections::{HashMap, HashSet};
-use tokio::{fs, io::AsyncWriteExt};
 
 /// `library_id = None` counts files across every library (used by the "any files
 /// scanned at all yet" bootstrap check). `Some(id)` scopes to one library, so a
@@ -445,19 +444,6 @@ pub async fn get_grouped_files(
         let author_entry = result.entry(author).or_insert_with(|| HashMap::new());
         let book_entry = author_entry.entry(series).or_insert_with(|| Vec::new());
         book_entry.push(row);
-    }
-
-    // Debug artifact only - must not fail an otherwise-successful read.
-    let res_json = serde_json::to_string_pretty(&result).unwrap_or_default();
-    match fs::File::create("bookresmultipart.json").await {
-        Ok(mut json_file) => {
-            if let Err(e) = json_file.write_all(res_json.as_bytes()).await {
-                tracing::warn!("Failed to write debug artifact bookresmultipart.json: {e}");
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Failed to create debug artifact bookresmultipart.json: {e}");
-        }
     }
 
     Ok(result)

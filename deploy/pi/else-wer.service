@@ -1,17 +1,18 @@
+# Template: `make pi-install-unit` fills in the @...@ values from .deploy.env.
 [Unit]
 Description=Else-Wer
 After=network.target
 # The audiobook library lives on the USB drive mounted here. Without this the
 # service starts happily against the bare mountpoint and serves 404s for every
 # stream and cover while looking healthy (fstab uses nofail, so boot is silent
-# about it too). Requires= + After= on home-pi-drv.mount: refuse to run without
+# about it too). Requires= + After= on the mount unit: refuse to run without
 # the media.
-RequiresMountsFor=/home/pi/drv
+RequiresMountsFor=@PI_LIBRARY_MOUNT@
 
 [Service]
-User=pi
-WorkingDirectory=/home/pi/
-ExecStart=/home/pi/else-wer
+User=@PI_USER@
+WorkingDirectory=@PI_HOME@/
+ExecStart=@PI_HOME@/else-wer
 Restart=always
 RestartSec=5
 
@@ -19,4 +20,4 @@ RestartSec=5
 WantedBy=multi-user.target
 # A dependency-ordered stop (drive dropped off the bus) is not a process exit, so
 # Restart=always does not bring us back. Being wanted by the mount does.
-WantedBy=home-pi-drv.mount
+WantedBy=@MOUNT_UNIT@

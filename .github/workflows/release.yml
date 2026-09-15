@@ -88,7 +88,7 @@
 #           cat > "$stage/README.txt" <<'EOF'
 #           Else-wer - bare-metal release build
 
-#           1. Set env vars (see .env.docker.example in the source repo for the full reference):
+#           1. Set env vars (see deploy/docker/.env.example in the source repo for the full reference):
 #                JWT_SECRET     required, no default
 #                DATABASE_URL   default sqlite:./else-wer.db
 #                AUDIOBOOKS_LOCATION  default ./data

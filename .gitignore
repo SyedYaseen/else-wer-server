@@ -1,25 +1,28 @@
 /target
 /data
 /datatest
-rustybookshelf.db
-rustybookshelf.db-wal
-rustybookshelf.db-shm
+else-wer.db*
+# Real env files hold secrets; only the *.example templates are tracked (make env-init).
 .env
-.env.docker
+.env.*
+!.env*.example
+.deploy.env
 plan.md
 covers
 backupdata
 datatest
 /logs
-bookresmultipart.json
 .gitignore
 /audiobooks
 graphify-out/
 src/ui/node_modules/
 src/ui/dist/
-piconfig/else-wer.db
+deploy/pi/else-wer.db
 todo/10_OFFLINE_MODE.md
 # poochi deploy: DB, jwt key and generated covers live in the bind mount
 deploy/poochi/data/
 deploy/poochi/logs/
+# docker deploy bind mounts, when DATA_DIR/LOGS_DIR/AUDIOBOOKS_DIR are relative paths
+deploy/docker/data/
+deploy/docker/logs/
 selfIdentity.plist

@@ -125,6 +125,24 @@
   (cfresolver there is HTTP-01-only and serves themizadah.com - can't issue wildcards, stays
   untouched). deploy/poochi/docker-compose.traefik.yml is written and ready to apply once
   that lands. Detail in docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+- [ ] Deploy/env cleanup (2026-09-12, uncommitted). Root Makefile (`make help`) + gitignored
+  .deploy.env (DOCKER_SSH, DOCKER_SSH_DIR, PI_*). ONE compose file for any x86_64 host:
+  deploy/docker/docker-compose.yml, host values in its gitignored .env (HOST_PORT, PUID/PGID,
+  DATA_DIR, AUDIOBOOKS_DIR, COMPOSE_PROJECT_NAME; poochi = 3030/1000:1000/project poochi).
+  Remote docker-deploy builds here, ships the image + this checkout's compose files over ssh,
+  so it never depends on the remote checkout. Pi stays native (deploy/pi/), unit/udev/.env are
+  templates rendered from PI_* vars. deploy/poochi/ and the root compose/.env.docker removed.
+  .env/.env.local/.env.pi untracked (JWT secrets in history - rotate).
+  LESSON: revision 2 (root base + poochi overlay + compose.env) failed on poochi - it was
+  partially committed (13c1cb6: Makefile + compose.env + env deletions, but not the rewritten
+  compose files), poochi pulled it, and remote make ran poochi's checkout, so the old overlay's
+  `env_file: .env` resolved to the deleted root .env. Revision 3 ships compose files over ssh so
+  a remote deploy never depends on what the remote checkout contains.
+  DONE 2026-09-12: poochi transition - hand edits reverted, deploy/docker/.env created there
+  (3030, 1000:1000, project poochi, DATA_DIR/LOGS_DIR -> existing deploy/poochi/{data,logs});
+  `make docker-deploy` from dev machine recreated the container, healthy, /api/health 200,
+  existing DB/covers/creds kept. REMAINING: user commits ALL of it (git add -A), poochi
+  `git pull`; rotate JWT secrets (in history). App repo: Makefile apk/apk-install/apk-reinstall/dev-apk/logcat.
 
 ## Done
 Author/book move + merge in Organize (2026-07-11, uncommitted): lets users move a book's or author's files to a

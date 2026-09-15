@@ -120,7 +120,7 @@ systemctl is-active else-wer
 > This used to say no restart was needed, because else-wer opens files per request.
 > That is no longer true: `RequiresMountsFor=/home/pi/drv` means a dropped mount
 > takes the service down with it. In normal operation the udev rule
-> (`piconfig/99-else-wer-library-drive.rules`) does both steps for you.
+> (`deploy/pi/99-else-wer-library-drive.rules`, installed by `make pi-install-udev`) does both steps for you.
 
 ### Verify every file in the DB resolves
 
