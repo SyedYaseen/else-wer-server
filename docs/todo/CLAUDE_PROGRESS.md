@@ -9,7 +9,9 @@
   - Business/GA audit (2026-07-11): split into todo/6_SECURITY_HARDENING.md,
     todo/7_OSS_RELEASE_DOCS.md, todo/8_FRONTEND_TESTING.md, todo/9_FEATURE_GAPS.md
   - Host migration Pi Zero -> poochi (2026-09-05, in progress): docs/todo/14_POOCHI_MIGRATION.md
-  - ew.syedyaseen.dev hostname + TLS wildcard + WireGuard (planned): docs/todo/15_ELSEWER_HOSTNAME_TLS.md
+  - ew.syedyaseen.dev + jf.syedyaseen.dev over HTTPS + WireGuard tunnel (done 2026-09-16): docs/todo/15_ELSEWER_HOSTNAME_TLS.md
+  - Play review demo server (2026-09-15, live at elsewer-demo.syedyaseen.dev; phone test + Play Console entry
+    pending): docs/PLAY_REVIEW_DEMO_SERVER.md, deployed from ~/elsewer-demo/
 - Done: L127
   - Organize author/book move+merge: L107
   - Manual chapter reordering: L121
@@ -119,12 +121,22 @@
   traefik.enable=false, user 1000:1000, host port 3030 (3000 is taken by mzbe on that box).
   Fresh DB by choice - no progress migration. Full detail + verification steps in
   docs/todo/14_POOCHI_MIGRATION.md.
-- [ ] ew.syedyaseen.dev over HTTPS via a *.syedyaseen.dev wildcard, then WireGuard (planned,
-  not started; revised 2026-09-06 - DNS moved to Cloudflare, Pi retiring so vw/jf need the
-  same wildcard). Blocked on a new cfdns DNS-01 resolver in poochi's existing Traefik
-  (cfresolver there is HTTP-01-only and serves themizadah.com - can't issue wildcards, stays
-  untouched). deploy/poochi/docker-compose.traefik.yml is written and ready to apply once
-  that lands. Detail in docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+- [x] ew.syedyaseen.dev + jf.syedyaseen.dev over HTTPS, plus WireGuard tunnel (done 2026-09-16).
+  Triage found WireGuard was already live on poochi from earlier untracked work (wg0, hourly
+  Cloudflare WAN-IP updater for wg.syedyaseen.dev) but had never actually handshaked - root
+  cause was a missing router port-forward for 51820/udp, now fixed by the user. Added `cfdns`
+  DNS-01 resolver to poochi's Traefik (/home/poochi/mz/proxy/traefik/traefik.yaml, separate
+  repo) sharing one Cloudflare token (widened to cover both themizadah.com and syedyaseen.dev
+  zones - Traefik/lego only supports one Cloudflare credential per process, so the doc's
+  original "fully separate tokens per resolver" plan wasn't achievable as written). Applied
+  deploy/docker/docker-compose.traefik.yml (else-wer) and added matching Traefik labels to
+  jellyfin's compose (/home/poochi/projects/media/docker-compose.yaml, jellyfin turned out to
+  already be Dockerized on poochi, not native as 14_POOCHI_MIGRATION.md claimed). Verified
+  live: both hosts serve real Let's Encrypt certs via the shared wildcard resolver;
+  themizadah.com unaffected. poochi WireGuard setup (updater script/units + add-client.sh,
+  ported from the Pi version) committed to deploy/wireguard-poochi/. Full detail in
+  docs/todo/15_ELSEWER_HOSTNAME_TLS.md. REMAINING: on-device PWA offline-mode test over the
+  tunnel by user.
 - [ ] Deploy/env cleanup (2026-09-12, uncommitted). Root Makefile (`make help`) + gitignored
   .deploy.env (DOCKER_SSH, DOCKER_SSH_DIR, PI_*). ONE compose file for any x86_64 host:
   deploy/docker/docker-compose.yml, host values in its gitignored .env (HOST_PORT, PUID/PGID,

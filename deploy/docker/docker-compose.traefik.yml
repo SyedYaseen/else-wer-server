@@ -1,6 +1,6 @@
-# Optional overlay: put else-wer behind an existing Traefik (`make docker-up TRAEFIK=1`).
-# Written for poochi's Traefik + ew.syedyaseen.dev and not applied yet; prerequisites
-# (wildcard cert domain, DNS record) are in docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
+# Optional overlay: put else-wer behind poochi's existing Traefik (on by default in `make docker-*`; `TRAEFIK=0` skips it).
+# Prerequisites (cfdns DNS-01 resolver, *.syedyaseen.dev DNS record) are done -- see
+# docs/todo/15_ELSEWER_HOSTNAME_TLS.md.
 # The published HOST_PORT from the base file stays, so direct LAN access keeps working.
 services:
   else-wer:
@@ -14,7 +14,9 @@ services:
       - "traefik.http.routers.elsewer.rule=Host(`ew.syedyaseen.dev`)"
       - "traefik.http.routers.elsewer.entrypoints=websecure"
       - "traefik.http.routers.elsewer.tls=true"
-      # No tls.certresolver on purpose: the router inherits the entrypoint's wildcard cert.
+      # websecure's default certresolver (cfresolver) only covers themizadah.com -- this
+      # router needs the syedyaseen.dev wildcard resolver explicitly.
+      - "traefik.http.routers.elsewer.tls.certresolver=cfdns"
       - "traefik.http.services.elsewer.loadbalancer.server.port=3000"
 
 networks:

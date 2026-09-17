@@ -39,7 +39,7 @@ Named volumes are root-owned, so a non-root `PUID` needs bind mounts.
 ```sh
 make docker-deploy   # rebuild + restart
 make docker-ps / docker-logs / docker-down / docker-config
-make docker-up TRAEFIK=1   # add docker-compose.traefik.yml
+make docker-up TRAEFIK=0   # skip docker-compose.traefik.yml (on by default)
 ```
 
 ## Deploying to another machine

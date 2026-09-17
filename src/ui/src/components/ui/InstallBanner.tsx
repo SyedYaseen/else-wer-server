@@ -41,7 +41,7 @@ export function InstallBanner() {
   return (
     <>
       <div className="install-banner">
-        <img src="/apple-touch-icon.png" alt="" className="install-banner-icon" />
+        <img src="/apple-touch-icon-v2.png" alt="" className="install-banner-icon" />
         <span>Add else-wer to your home screen</span>
         <Button variant="primary" onClick={handleInstallClick}>
           Install

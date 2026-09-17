@@ -1,4 +1,11 @@
-# WireGuard remote access
+# WireGuard remote access (Pi — retired)
+
+**Retired 2026-09-16.** The Pi this was written for is decommissioned. The live setup is on
+poochi now, using a Cloudflare-API WAN updater instead of DuckDNS (`syedyaseen.dev` lives at
+Cloudflare) — see `../wireguard-poochi/README.md`. This directory is kept for reference only;
+`add-client.sh`'s DuckDNS-hostname and LAN-subnet assumptions don't apply to poochi as-is.
+
+---
 
 Real remote access to the Pi (and, if you want, the rest of the LAN) from
 outside the house — iPhone, Android, Arch laptop — without exposing

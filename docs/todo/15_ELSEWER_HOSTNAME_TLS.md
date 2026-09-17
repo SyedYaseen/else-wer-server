@@ -1,4 +1,40 @@
-Status: planned, not executed (2026-09-06, revised)
+Status: done (2026-09-16)
+
+## Outcome (2026-09-16)
+
+Triage found WireGuard was already live on poochi from earlier untracked work (`wg0` interface,
+hourly Cloudflare-API WAN-IP updater keeping `wg.syedyaseen.dev` current) — but it had never
+actually completed a handshake. Root cause: the router's UDP `51820` port-forward was missing
+(likely a leftover from the retired Pi, or never added). Fixed by the user; a client
+(`iphone`, peer already existed in `wg0.conf` from earlier work) now connects successfully.
+
+For HTTPS: added a `cfdns` DNS-01 resolver to poochi's Traefik
+(`/home/poochi/mz/proxy/traefik/traefik.yaml`, separate repo) alongside the existing
+`cfresolver`. One correction to the plan below: Traefik/lego reads Cloudflare credentials once
+per process, shared by every `provider: cloudflare` resolver — you cannot run two Cloudflare
+resolvers with two different single-zone tokens in one Traefik instance. Resolved by widening
+the existing token's Cloudflare-dashboard scope to cover both `themizadah.com` and
+`syedyaseen.dev` zones (still least-privilege: DNS:Edit on just these two zones), rather than
+minting a fully separate token per resolver.
+
+Also: the `certificatesResolvers.<name>.acme.domains` field used in this doc's original
+`cfdns` snippet doesn't exist in Traefik's schema (only `entryPoints.<name>.http.tls.domains`
+does, and only one resolver can be the entrypoint's default) — using it crashed Traefik on
+startup. Removed; the wildcard cert is instead obtained on-demand per-router the first time
+each host is requested (`ew.syedyaseen.dev`, `jf.syedyaseen.dev` — both now hold real
+Let's Encrypt certs from `cfdns`).
+
+`ew.syedyaseen.dev` (else-wer) and `jf.syedyaseen.dev` (Jellyfin — turned out to already be
+Dockerized on poochi, not native as `14_POOCHI_MIGRATION.md` says) both got Traefik labels and
+now serve HTTPS via the shared wildcard. `themizadah.com` confirmed unaffected throughout.
+
+**Remaining**: on-device PWA offline-mode verification over the tunnel (the actual point of this HTTPS work) is still
+pending.
+
+---
+
+Status (original plan below): superseded by the Outcome section above — kept for the
+Cloudflare-token and crossover-analysis reasoning, which is still accurate.
 
 Prerequisite: `14_POOCHI_MIGRATION.md` complete (else-wer running on poochi at
 `http://192.168.1.18:3030`).
@@ -101,7 +137,7 @@ anything else). Watch `docker logs -f traefik` for the ACME order.
 
 ```sh
 cd ~/projects/else-wer-server
-make docker-up TRAEFIK=1
+make docker-up
 ```
 
 `deploy/docker/docker-compose.traefik.yml` flips `traefik.enable=true`, joins `mz-net` as a
@@ -122,12 +158,17 @@ question the previous version of this doc left open). A poochi variant still nee
   IP), refreshed by a timer against Cloudflare's API when the WAN IP changes
 - a port forward on the router to poochi
 
-Not started. `deploy/wireguard/` should not be assumed to work as-is against poochi.
+**Done (2026-09-16), but not via `deploy/wireguard/`** — this was set up on poochi outside the
+repo at some earlier point (untracked), found live during this pass's triage: `wg0` interface,
+`10.10.0.0/24` tunnel subnet, `51820/udp`, and an hourly systemd timer
+(`wg-wan-cloudflare-update`) keeping `wg.syedyaseen.dev` pointed at the current WAN IP via the
+Cloudflare API. The only thing actually broken was the router's port-forward (missing), now
+fixed. `deploy/wireguard/` (Pi/DuckDNS-shaped) is retired/superseded but left in place; the
+real poochi setup — including `add-client.sh`, ported from the Pi version — is committed at
+`deploy/wireguard-poochi/`.
 
 ## Open questions
 
-- Exact Cloudflare API token env var name(s) for the `cfdns` resolver — depends on the lego
-  provider version in the `traefik:latest` image; confirm when applying in the mz/proxy repo.
 - Where Vaultwarden (`vw`) ends up running now that the Pi is retiring — that host decision
   belongs to `/home/loop/p/vw`, not else-wer, but its router will use the same `cfdns`
   wildcard once decided.

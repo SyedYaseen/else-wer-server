@@ -18,7 +18,8 @@ PI_BIN           := target/$(PI_TARGET)/release/else-wer
 
 PWA_DIR    := src/ui
 DOCKER_DIR := deploy/docker
-DC_FILES   := docker-compose.yml $(if $(TRAEFIK),docker-compose.traefik.yml)
+TRAEFIK    ?= 1
+DC_FILES   := docker-compose.yml $(if $(filter 1,$(TRAEFIK)),docker-compose.traefik.yml)
 
 # Real (gitignored) env files: seeded by env-init, preserved across `make pull`.
 ENV_FILES := .env .env.local .env.docker .env.pi .deploy.env deploy/pi/.env deploy/docker/.env deploy/poochi/.env
@@ -84,7 +85,7 @@ pull: ## git pull that keeps local env files (backup in ~/.else-wer-env-backup)
 	echo "env backup: $$bk"; exit $$rc
 
 # ---- docker (x86_64; see deploy/docker/README.md) ---------------------------
-# Here by default; on another host when DOCKER_SSH is set. TRAEFIK=1 adds the overlay.
+# Here by default; on another host when DOCKER_SSH is set. Traefik overlay on by default; TRAEFIK=0 skips it.
 
 docker-deploy: ## rebuild + restart (with DOCKER_SSH: build here, ship the image over ssh)
 ifeq ($(DOCKER_SSH),)

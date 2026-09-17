@@ -9,7 +9,7 @@ export function InstallSheet({ open, onClose }: InstallSheetProps) {
   return (
     <BottomSheet open={open} onClose={onClose}>
       <h3 className="sheet-title">Add to Home Screen</h3>
-      <img src="/apple-touch-icon.png" alt="" className="install-sheet-icon" />
+      <img src="/apple-touch-icon-v2.png" alt="" className="install-sheet-icon" />
       <ol className="install-steps">
         <li>Tap the Share icon in Safari's toolbar</li>
         <li>Scroll down and tap "Add to Home Screen"</li>

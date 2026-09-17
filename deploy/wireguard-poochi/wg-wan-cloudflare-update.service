@@ -1,0 +1,6 @@
+[Unit]
+Description=Update wg.syedyaseen.dev with current public IP (WireGuard endpoint)
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/wireguard/wg-cloudflare.env
+ExecStart=/usr/local/bin/wg-wan-cloudflare-update

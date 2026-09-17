@@ -1,0 +1,7 @@
+[Unit]
+Description=Hourly WAN Cloudflare refresh for the WireGuard endpoint
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+[Install]
+WantedBy=timers.target
